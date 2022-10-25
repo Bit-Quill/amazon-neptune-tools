@@ -46,6 +46,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static com.amazonaws.services.neptune.export.NeptuneExportService.NEPTUNE_EXPORT_TAGS;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -348,10 +350,13 @@ public class ExportToS3NeptuneExportEventHandler implements NeptuneExportEventHa
 
                 AmazonClientException amazonClientException = upload.waitForException();
 
+                // override AmazonClientException's isRetryable instead?
                 if (amazonClientException != null){
                     String errorMessage = amazonClientException.getMessage();
+                    // only retry on 5xx? or no-retry on 4xx?
+                    Matcher exMsgStatusCodeMatcher = Pattern.compile("Status Code: (5\\d+)").matcher(errorMessage);
                     logger.error("Upload to S3 failed: {}", errorMessage);
-                    if (!amazonClientException.isRetryable() || retryCount > 2){
+                    if (!amazonClientException.isRetryable() || !exMsgStatusCodeMatcher.find() || retryCount > 2){
                         allowRetry = false;
                         logger.warn("Cancelling upload to S3 [RetryCount: {}]", retryCount);
                         throw new RuntimeException(String.format("Upload to S3 failed [Directory: %s, S3 location: %s, Reason: %s, RetryCount: %s]", directory, outputS3ObjectInfo, errorMessage, retryCount));
