@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class NeptuneStreamsSimpleJsonPropertyGraphPrinter implements PropertyGraphPrinter {
 
@@ -60,7 +59,7 @@ public class NeptuneStreamsSimpleJsonPropertyGraphPrinter implements PropertyGra
     }
 
     @Override
-    public void printProperties(Map<?, ?> properties, boolean applyFormatting) throws IOException {
+    public void printProperties(Map<?, ?> properties, boolean applyFormatting, boolean isRewrite) throws IOException {
         printProperties(properties);
     }
 

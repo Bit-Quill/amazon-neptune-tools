@@ -154,7 +154,7 @@ public class JsonPropertyGraphPrinter implements PropertyGraphPrinter {
     }
 
     @Override
-    public void printProperties(Map<?, ?> properties, boolean applyFormatting) throws IOException {
+    public void printProperties(Map<?, ?> properties, boolean applyFormatting, boolean isRewrite) throws IOException {
         printProperties(properties);
     }
 

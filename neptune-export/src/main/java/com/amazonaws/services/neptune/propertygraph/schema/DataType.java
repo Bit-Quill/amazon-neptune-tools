@@ -240,12 +240,17 @@ public enum DataType {
     String {
         @Override
         public String format(Object value) {
-            return format(value, false);
+            return format(value, false, false);
         }
 
         @Override
         public String format(Object value, boolean escapeNewline) {
-            java.lang.String escaped = escapeDoubleQuotes(value);
+            return format(value, escapeNewline, false);
+        }
+
+        @Override
+        public String format(Object value, boolean escapeNewline, boolean isRewrite) {
+            java.lang.String escaped = escapeDoubleQuotes(value, isRewrite);
             if (escapeNewline){
                 escaped = escapeNewlineChar(escaped);
             }
@@ -270,7 +275,7 @@ public enum DataType {
             return java.lang.String.format("\"%s\"",
                     values.stream().
                             map(v -> DataType.escapeSeparators(v, options.multiValueSeparator())).
-                            map(DataType::escapeDoubleQuotes).
+                            map(v -> DataType.escapeDoubleQuotes(v, false)).
                             map(v -> options.escapeNewline() ? escapeNewlineChar(v) : v).
                             collect(Collectors.joining(options.multiValueSeparator())));
         }
@@ -377,8 +382,11 @@ public enum DataType {
         return temp.replace(separator, "\\" + separator);
     }
 
-    public static String escapeDoubleQuotes(Object value) {
-        String temp = value.toString().replace("\"\"", "\"");
+    public static String escapeDoubleQuotes(Object value, boolean isRewrite) {
+        String temp = value.toString();
+        if (isRewrite) {
+            temp = temp.replace("\"\"", "\"");
+        }
         return temp.replace("\"", "\"\"");
     }
 
@@ -391,6 +399,10 @@ public enum DataType {
     }
 
     public String format(Object value, boolean escapeNewline) {
+        return value.toString();
+    }
+
+    public java.lang.String format(Object value, boolean escapeNewline, boolean isRewrite) {
         return value.toString();
     }
 

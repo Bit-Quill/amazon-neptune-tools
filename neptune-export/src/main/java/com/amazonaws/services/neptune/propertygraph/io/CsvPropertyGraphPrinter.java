@@ -82,11 +82,11 @@ public class CsvPropertyGraphPrinter implements PropertyGraphPrinter {
 
     @Override
     public void printProperties(Map<?, ?> properties) {
-        printProperties(properties, true);
+        printProperties(properties, true, false);
     }
 
     @Override
-    public void printProperties(Map<?, ?> properties, boolean applyFormatting) {
+    public void printProperties(Map<?, ?> properties, boolean applyFormatting, boolean isRewrite) {
         for (PropertySchema propertySchema : labelSchema.propertySchemas()) {
 
             Object property = propertySchema.property();
@@ -95,7 +95,7 @@ public class CsvPropertyGraphPrinter implements PropertyGraphPrinter {
                 Object value = properties.get(property);
                 int size = propertySchema.accept(value, allowUpdateSchema);
                 labelSchema.recordObservation(propertySchema, value, size);
-                printProperty(propertySchema, value, applyFormatting);
+                printProperty(propertySchema, value, applyFormatting, isRewrite);
             } else {
                 commaPrinter.printComma();
             }
@@ -103,10 +103,10 @@ public class CsvPropertyGraphPrinter implements PropertyGraphPrinter {
     }
 
     public void printProperty(PropertySchema schema, Object value) {
-        printProperty(schema, value, true);
+        printProperty(schema, value, true, false);
     }
 
-    private void printProperty(PropertySchema schema, Object value, boolean applyFormatting) {
+    private void printProperty(PropertySchema schema, Object value, boolean applyFormatting, boolean isRewrite) {
 
         DataType dataType = schema.dataType();
 
@@ -115,7 +115,7 @@ public class CsvPropertyGraphPrinter implements PropertyGraphPrinter {
         if (applyFormatting) {
             String formattedValue = isList(value) ?
                     formatList(value, dataType, printerOptions) :
-                    dataType.format(value, printerOptions.escapeNewline());
+                    dataType.format(value, printerOptions.escapeNewline(), isRewrite);
             writer.print(formattedValue);
         } else {
             if (dataType == DataType.String) {

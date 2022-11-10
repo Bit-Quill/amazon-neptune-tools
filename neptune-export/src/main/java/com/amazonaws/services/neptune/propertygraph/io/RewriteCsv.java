@@ -171,7 +171,8 @@ public class RewriteCsv implements RewriteCommand {
                         }
                     }
 
-                    target.printProperties(record.toMap(), false);
+                    // we need to distinguish this printProperties for rewrite from first passes
+                    target.printProperties(record.toMap(), false, true);
                     target.printEndRow();
 
                     recordCount++;

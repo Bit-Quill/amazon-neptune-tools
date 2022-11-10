@@ -171,7 +171,8 @@ public class RewriteAndMergeCsv implements RewriteCommand {
                                 }
                             }
 
-                            printer.printProperties(record.toMap(), false);
+                            // we need to distinguish this printProperties for rewrite from first passes
+                            printer.printProperties(record.toMap(), false, true);
                             printer.printEndRow();
                         }
 
