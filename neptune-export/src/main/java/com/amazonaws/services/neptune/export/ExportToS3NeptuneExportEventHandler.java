@@ -106,6 +106,7 @@ public class ExportToS3NeptuneExportEventHandler implements NeptuneExportEventHa
     private final Collection<String> profiles;
     private final Collection<CompletionFileWriter> completionFileWriters;
     private final AtomicReference<S3ObjectInfo> result = new AtomicReference<>();
+    private static final Pattern STATUS_CODE_5XX_PATTERN = Pattern.compile("Status Code: (5\\d+)");
 
     public ExportToS3NeptuneExportEventHandler(String localOutputPath,
                                                String outputS3Path,
@@ -350,19 +351,18 @@ public class ExportToS3NeptuneExportEventHandler implements NeptuneExportEventHa
 
                 AmazonClientException amazonClientException = upload.waitForException();
 
-                // override AmazonClientException's isRetryable instead?
                 if (amazonClientException != null){
                     String errorMessage = amazonClientException.getMessage();
-                    // only retry on 5xx? or no-retry on 4xx?
-                    Matcher exMsgStatusCodeMatcher = Pattern.compile("Status Code: (5\\d+)").matcher(errorMessage);
+                    Matcher exMsgStatusCodeMatcher = STATUS_CODE_5XX_PATTERN.matcher(errorMessage);
                     logger.error("Upload to S3 failed: {}", errorMessage);
-                    if (!amazonClientException.isRetryable() || !exMsgStatusCodeMatcher.find() || retryCount > 2){
+                    // only retry if exception is retryable, the status code is 5xx, and we have retry counts left
+                    if (amazonClientException.isRetryable() && exMsgStatusCodeMatcher.find() && retryCount <= 2) {
+                        retryCount++;
+                        logger.info("Retrying upload to S3 [RetryCount: {}]", retryCount);
+                    } else {
                         allowRetry = false;
                         logger.warn("Cancelling upload to S3 [RetryCount: {}]", retryCount);
                         throw new RuntimeException(String.format("Upload to S3 failed [Directory: %s, S3 location: %s, Reason: %s, RetryCount: %s]", directory, outputS3ObjectInfo, errorMessage, retryCount));
-                    } else {
-                        retryCount++;
-                        logger.info("Retrying upload to S3 [RetryCount: {}]", retryCount);
                     }
                 } else {
                     allowRetry = false;
