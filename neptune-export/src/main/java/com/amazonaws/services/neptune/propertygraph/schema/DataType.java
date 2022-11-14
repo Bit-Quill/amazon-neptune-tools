@@ -250,7 +250,11 @@ public enum DataType {
 
         @Override
         public String format(Object value, boolean escapeNewline, boolean isRewrite) {
-            java.lang.String escaped = escapeDoubleQuotes(value, isRewrite);
+            java.lang.String escaped = value.toString();
+            // only escape double quotes on first pass through
+            if (!isRewrite) {
+                escaped = escapeDoubleQuotes(value);
+            }
             if (escapeNewline){
                 escaped = escapeNewlineChar(escaped);
             }
@@ -275,7 +279,7 @@ public enum DataType {
             return java.lang.String.format("\"%s\"",
                     values.stream().
                             map(v -> DataType.escapeSeparators(v, options.multiValueSeparator())).
-                            map(v -> DataType.escapeDoubleQuotes(v, false)).
+                            map(DataType::escapeDoubleQuotes).
                             map(v -> options.escapeNewline() ? escapeNewlineChar(v) : v).
                             collect(Collectors.joining(options.multiValueSeparator())));
         }
@@ -382,12 +386,8 @@ public enum DataType {
         return temp.replace(separator, "\\" + separator);
     }
 
-    public static String escapeDoubleQuotes(Object value, boolean isRewrite) {
-        String temp = value.toString();
-        if (isRewrite) {
-            temp = temp.replace("\"\"", "\"");
-        }
-        return temp.replace("\"", "\"\"");
+    public static String escapeDoubleQuotes(Object value) {
+        return value.toString().replace("\"", "\"\"");
     }
 
     public String typeDescription() {

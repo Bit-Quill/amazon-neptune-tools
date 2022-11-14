@@ -120,9 +120,9 @@ public class CsvPropertyGraphPrinter implements PropertyGraphPrinter {
         } else {
             if (dataType == DataType.String) {
                 if (isSingleValueColumnWithSemicolonSeparator(schema)) {
-                    writer.print(DataType.String.format(SemicolonUtils.unescape(value.toString()), printerOptions.escapeNewline()));
+                    writer.print(DataType.String.format(SemicolonUtils.unescape(value.toString()), printerOptions.escapeNewline(), isRewrite));
                 } else {
-                    writer.print(DataType.String.format(value, printerOptions.escapeNewline()));
+                    writer.print(DataType.String.format(value, printerOptions.escapeNewline(), isRewrite));
                 }
             } else {
                 writer.print(String.valueOf(value));
