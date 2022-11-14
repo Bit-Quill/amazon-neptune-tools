@@ -115,7 +115,7 @@ public class CsvPropertyGraphPrinter implements PropertyGraphPrinter {
         if (applyFormatting) {
             String formattedValue = isList(value) ?
                     formatList(value, dataType, printerOptions) :
-                    dataType.format(value, printerOptions.escapeNewline(), isRewrite);
+                    dataType.format(value, printerOptions.escapeNewline());
             writer.print(formattedValue);
         } else {
             if (dataType == DataType.String) {
