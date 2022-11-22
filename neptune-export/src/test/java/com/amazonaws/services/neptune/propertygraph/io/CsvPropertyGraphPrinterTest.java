@@ -21,6 +21,7 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVRecord;
 import org.junit.Test;
 
+import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
 import java.io.StringWriter;
@@ -119,36 +120,88 @@ public class CsvPropertyGraphPrinterTest {
     }
 
     @Test
-    public void shouldEscapeDoubleQuotesProperlyAfterPrintPropertiesToCSVAndRewrite() throws Exception {
+    public void shouldEscapeTwoDoubleQuoteAfterPrintPropertiesToCSVAndRewrite() throws Exception {
+        testEscapeCharacterAfterPrintPropertiesAndRewrite("{\"hobby\" : \"watching \"Flash\"\"}",
+                "\"{\"\"hobby\"\" : \"\"watching \"\"Flash\"\"\"\"}\"",
+                new PrinterOptions(CsvPrinterOptions.builder().build()));
+    }
 
-        String original2Quotes = "{\"hobby\" : \"watching \"Flash\"\"}";
-        String original3Quotes = "{\"hobby\" : \"watching \"The \"Flash\"\"\"}";
+    @Test
+    public void shouldEscapeThreeDoubleQuoteAfterPrintPropertiesToCSVAndRewrite() throws Exception {
+        testEscapeCharacterAfterPrintPropertiesAndRewrite("{\"hobby\" : \"watching \"The \"Flash\"\"\"}",
+                "\"{\"\"hobby\"\" : \"\"watching \"\"The \"\"Flash\"\"\"\"\"\"}\"",
+                new PrinterOptions(CsvPrinterOptions.builder().build()));
+    }
 
+    @Test
+    public void shouldPrintCommaInStringWhenPrintPropertiesToCSVAndRewrite() throws Exception {
+        testEscapeCharacterAfterPrintPropertiesAndRewrite("{\"hobby\", \"watching \"The \"Flash\"\"}",
+                "\"{\"\"hobby\"\", \"\"watching \"\"The \"\"Flash\"\"\"\"}\"",
+                new PrinterOptions(CsvPrinterOptions.builder().build()));
+    }
+
+    @Test
+    public void shouldNotEscapeNewlineCharAfterPrintPropertiesToCSVAndRewrite() throws Exception {
+        testEscapeCharacterAfterPrintPropertiesAndRewrite("A\nB", "\"A\nB\"",
+                new PrinterOptions(CsvPrinterOptions.builder().build()));
+    }
+
+    @Test
+    public void shouldNotEscapeNewlineAfterPrintPropertiesToCSVAndRewrite() throws Exception {
+        testEscapeCharacterAfterPrintPropertiesAndRewrite("A" + System.lineSeparator() + "B", "\"A\nB\"",
+                new PrinterOptions(CsvPrinterOptions.builder().build()));
+    }
+
+    @Test
+    public void shouldEscapeNewlineCharSetTrueAfterPrintPropertiesToCSVAndRewrite() throws Exception {
+        testEscapeCharacterAfterPrintPropertiesAndRewrite("A\nB",
+                "\"A\\nB\"",
+                new PrinterOptions(CsvPrinterOptions.builder().setEscapeNewline(true).build()));
+    }
+
+    @Test
+    public void shouldEscapeNewlineSetTrueAfterPrintPropertiesToCSVAndRewrite() throws Exception {
+        testEscapeCharacterAfterPrintPropertiesAndRewrite("A" + System.lineSeparator() + "B",
+                "\"A\\nB\"",
+                new PrinterOptions(CsvPrinterOptions.builder().setEscapeNewline(true).build()));
+    }
+
+    @Test
+    public void shouldNotEscapeNewlineCharsAfterPrintPropertiesToCSVAndRewrite() throws Exception {
+        testEscapeCharacterAfterPrintPropertiesAndRewrite("A\n\nB", "\"A\n\nB\"",
+                new PrinterOptions(CsvPrinterOptions.builder().build()));
+    }
+
+    @Test
+    public void shouldEscapeNewlineCharsSetTrueAfterPrintPropertiesToCSVAndRewrite() throws Exception {
+        testEscapeCharacterAfterPrintPropertiesAndRewrite("A\n\nB",
+                "\"A\\n\\nB\"",
+                new PrinterOptions(CsvPrinterOptions.builder().setEscapeNewline(true).build()));
+    }
+
+    // A set of tests to ensure that String escaping is done properly when CSVPropertyGraphPrinter prints to
+    // a buffer, so when the buffer is read in by CSVFormat, the original property string is received
+    private void testEscapeCharacterAfterPrintPropertiesAndRewrite(String originalValue, String expectedValue, PrinterOptions printerOptions) throws IOException {
         StringWriter stringWriter = new StringWriter();
 
         PropertySchema propertySchema1 = new PropertySchema("property1", false, DataType.String, false);
-        PropertySchema propertySchema2 = new PropertySchema("property2", false, DataType.String, false);
 
         LabelSchema labelSchema = new LabelSchema(new Label("Entity"));
         labelSchema.put("property1", propertySchema1);
-        labelSchema.put("property2", propertySchema2);
 
         HashMap<String, List<String>> props = new HashMap<String, List<String>>() {{
-            put("property1", Collections.singletonList(original2Quotes));
-            put("property2", Collections.singletonList(original3Quotes));
+            put("property1", Collections.singletonList(originalValue));
         }};
 
         CsvPropertyGraphPrinter printer = new CsvPropertyGraphPrinter(
                 new PrintOutputWriter("outputId", stringWriter),
                 labelSchema,
-                new PrinterOptions(CsvPrinterOptions.builder().build()));
+                printerOptions);
 
         printer.printProperties(props);
 
         // all double quotes should be escaped when printer prints
-        assertEquals("\"{\"\"hobby\"\" : \"\"watching \"\"Flash\"\"\"\"}\"," +
-                        "\"{\"\"hobby\"\" : \"\"watching \"\"The \"\"Flash\"\"\"\"\"\"}\"",
-                stringWriter.toString());
+        assertEquals(expectedValue, stringWriter.toString());
 
         // using CSVFormat to read in printed items (same library used by RewriteCSV)
         String[] filePropertyHeaders = labelSchema.propertySchemas().stream()
@@ -161,15 +214,17 @@ public class CsvPropertyGraphPrinterTest {
 
         for (CSVRecord record : records) {
             // what CSVFormat read in from printed CSV should be the original value
-            assertEquals(original2Quotes, record.get("property1"));
-            assertEquals(original3Quotes, record.get("property2"));
+            if (printerOptions.csv().escapeNewline()){
+                // parsed record will contain escaped newline, to compare to original we have to unescape it
+                assertEquals(originalValue, record.get("property1").replace("\\n", "\n"));
+            } else {
+                assertEquals(originalValue, record.get("property1"));
+            }
 
             // double quotes should all be properly escaped again when we format for rewrite
-            assertEquals("\"{\"\"hobby\"\" : \"\"watching \"\"Flash\"\"\"\"}\"",
-                    DataType.String.format(record.get("property1")));
-            assertEquals("\"{\"\"hobby\"\" : \"\"watching \"\"The \"\"Flash\"\"\"\"\"\"}\"",
-                    DataType.String.format(record.get("property2")));
+            assertEquals(expectedValue, DataType.String.format(record.get("property1"), printerOptions.csv().escapeNewline()));
         }
     }
+
 
 }
