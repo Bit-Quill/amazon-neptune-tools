@@ -24,6 +24,10 @@ public class EdgeMetadata {
     private static final Supplier<String> ID_GENERATOR = () -> UUID.randomUUID().toString();
 
     static EdgeMetadata parse(CSVRecord record, Supplier<String> idGenerator, PropertyValueParser parser) {
+        return parse(record, idGenerator, parser, null);
+    }
+
+    static EdgeMetadata parse(CSVRecord record, Supplier<String> idGenerator, PropertyValueParser parser, LabelMapper labelMapper) {
 
         Headers headers = new Headers();
         headers.add(Token.ID);
@@ -53,26 +57,33 @@ public class EdgeMetadata {
                 firstColumnIndex++;
             }
         }
-        return new EdgeMetadata(headers, firstColumnIndex, idGenerator, parser);
+        return new EdgeMetadata(headers, firstColumnIndex, idGenerator, parser, labelMapper);
     }
 
     public static EdgeMetadata parse(CSVRecord record, PropertyValueParser parser) {
-        return parse(record, ID_GENERATOR, parser);
+        return parse(record, ID_GENERATOR, parser, null);
+    }
+
+    public static EdgeMetadata parse(CSVRecord record, PropertyValueParser parser, LabelMapper labelMapper) {
+        return parse(record, ID_GENERATOR, parser, labelMapper);
     }
 
     private final Headers headers;
     private final int firstColumnIndex;
     private final Supplier<String> idGenerator;
     private final PropertyValueParser propertyValueParser;
+    private final LabelMapper labelMapper;
 
     private EdgeMetadata(Headers headers,
                          int firstColumnIndex,
                          Supplier<String> idGenerator,
-                         PropertyValueParser parser) {
+                         PropertyValueParser parser,
+                         LabelMapper labelMapper) {
         this.headers = headers;
         this.firstColumnIndex = firstColumnIndex;
         this.idGenerator = idGenerator;
         this.propertyValueParser = parser;
+        this.labelMapper = labelMapper;
     }
 
     public List<String> headers() {
@@ -106,10 +117,20 @@ public class EdgeMetadata {
                 } else {
                     int headerIndex = currentColumnIndex - firstColumnIndex + 1;
                     Header header = headers.get(headerIndex);
-                    PropertyValue propertyValue = propertyValueParser.parse(record.get(currentColumnIndex));
-                    header.updateDataType(propertyValue.dataType());
-                    currentColumnIndex++;
-                    return propertyValue.value();
+
+                    String value = record.get(currentColumnIndex);
+
+                    // Apply label mapping for edge labels
+                    if (header.equals(Token.LABEL) && labelMapper != null) {
+                        value = labelMapper.mapEdgeLabel(value);
+                        currentColumnIndex++;
+                        return value;
+                    } else {
+                        PropertyValue propertyValue = propertyValueParser.parse(value);
+                        header.updateDataType(propertyValue.dataType());
+                        currentColumnIndex++;
+                        return propertyValue.value();
+                    }
                 }
             }
         };

@@ -22,6 +22,10 @@ import java.util.stream.Collectors;
 public class VertexMetadata {
 
     public static VertexMetadata parse(CSVRecord record, PropertyValueParser parser) {
+        return parse(record, parser, null);
+    }
+
+    public static VertexMetadata parse(CSVRecord record, PropertyValueParser parser, LabelMapper labelMapper) {
 
         Headers headers = new Headers();
 
@@ -45,17 +49,19 @@ public class VertexMetadata {
                     headers.add(new Property(header));
             }
         }
-        return new VertexMetadata(headers, lastColumnIndex, parser);
+        return new VertexMetadata(headers, lastColumnIndex, parser, labelMapper);
     }
 
     private final Headers headers;
     private final int lastColumnIndex;
     private final PropertyValueParser propertyValueParser;
+    private final LabelMapper labelMapper;
 
-    private VertexMetadata(Headers headers, int lastColumnIndex, PropertyValueParser parser) {
+    private VertexMetadata(Headers headers, int lastColumnIndex, PropertyValueParser parser, LabelMapper labelMapper) {
         this.headers = headers;
         this.lastColumnIndex = lastColumnIndex;
         this.propertyValueParser = parser;
+        this.labelMapper = labelMapper;
     }
 
     public List<String> headers() {
@@ -84,9 +90,14 @@ public class VertexMetadata {
                 Header header = headers.get(index);
 
                 if (header.equals(Token.LABEL)) {
-                    return Arrays.stream(record.get(index++).split(":"))
-                            .filter(s -> !s.isEmpty())
-                            .collect(Collectors.joining(";"));
+                    String originalLabels = record.get(index++);
+                    if (labelMapper != null) {
+                        return labelMapper.mapVertexLabels(originalLabels);
+                    } else {
+                        return Arrays.stream(originalLabels.split(":"))
+                                .filter(s -> !s.isEmpty())
+                                .collect(Collectors.joining(";"));
+                    }
                 } else {
                     PropertyValue propertyValue = propertyValueParser.parse(record.get(index));
                     if (propertyValue.isMultiValued()) {

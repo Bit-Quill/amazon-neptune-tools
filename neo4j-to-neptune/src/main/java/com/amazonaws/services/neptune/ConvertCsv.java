@@ -41,6 +41,11 @@ public class ConvertCsv implements Runnable {
     @Once
     private File inputFile;
 
+    @Option(name = {"--conversion-config"}, description = "Path to YAML file containing configuration for label mappings and record filtering")
+    @Path(mustExist = true, kind = PathKind.FILE)
+    @Once
+    private File conversionConfigFile;
+
     @Option(name = {"--node-property-policy"}, description = "Conversion policy for multi-valued node properties (default, 'PutInSetIgnoringDuplicates')")
     @Once
     @AllowedValues(allowedValues = {"LeaveAsString", "Halt", "PutInSetIgnoringDuplicates", "PutInSetButHaltIfDuplicates"})
@@ -63,6 +68,10 @@ public class ConvertCsv implements Runnable {
     @Override
     public void run() {
         try {
+            // Load label mapping configuration
+            ConversionConfig labelMappingConfig = ConversionConfig.fromFile(conversionConfigFile);
+            LabelMapper labelMapper = new LabelMapper(labelMappingConfig);
+            RecordFilter recordFilter = new RecordFilter(labelMappingConfig);
 
             Directories directories = Directories.createFor(outputDirectory);
 
@@ -75,25 +84,37 @@ public class ConvertCsv implements Runnable {
 
                 long vertexCount = 0;
                 long edgeCount = 0;
+                long skippedVertexCount = 0;
+                long skippedEdgeCount = 0;
 
                 if (iterator.hasNext()) {
                     CSVRecord headers = iterator.next();
 
                     VertexMetadata vertexMetadata = VertexMetadata.parse(
                             headers,
-                            new PropertyValueParser(multiValuedNodePropertyPolicy, semiColonReplacement, inferTypes));
+                            new PropertyValueParser(multiValuedNodePropertyPolicy, semiColonReplacement, inferTypes),
+                            labelMapper);
                     EdgeMetadata edgeMetadata = EdgeMetadata.parse(
                             headers,
-                            new PropertyValueParser(multiValuedRelationshipPropertyPolicy, semiColonReplacement, inferTypes));
+                            new PropertyValueParser(multiValuedRelationshipPropertyPolicy, semiColonReplacement, inferTypes),
+                            labelMapper);
 
                     while (iterator.hasNext()) {
                         CSVRecord record = iterator.next();
                         if (vertexMetadata.isVertex(record)) {
-                            vertexFile.printRecord(vertexMetadata.toIterable(record));
-                            vertexCount++;
+                            if (recordFilter.shouldSkipVertex(record, vertexMetadata)) {
+                                skippedVertexCount++;
+                            } else {
+                                vertexFile.printRecord(vertexMetadata.toIterable(record));
+                                vertexCount++;
+                            }
                         } else if (edgeMetadata.isEdge(record)) {
-                            edgeFile.printRecord(edgeMetadata.toIterable(record));
-                            edgeCount++;
+                            if (recordFilter.shouldSkipEdge(record, edgeMetadata)) {
+                                skippedEdgeCount++;
+                            } else {
+                                edgeFile.printRecord(edgeMetadata.toIterable(record));
+                                edgeCount++;
+                            }
                         } else {
                             throw new IllegalStateException("Unable to parse record: " + record.toString());
                         }
@@ -104,7 +125,19 @@ public class ConvertCsv implements Runnable {
 
                     System.err.println("Vertices: " + vertexCount);
                     System.err.println("Edges   : " + edgeCount);
+
+                    if (recordFilter.hasSkipRules()) {
+                        System.err.println("Skipped vertices: " + skippedVertexCount);
+                        System.err.println("Skipped edges  : " + skippedEdgeCount);
+                        System.err.println(recordFilter.getSkipStatistics());
+                    }
+
                     System.err.println("Output  : " + directories.outputDirectory());
+
+                    if (labelMapper.hasVertexMappings() || labelMapper.hasEdgeMappings()) {
+                        System.err.println("Label mappings applied from: " + conversionConfigFile.getAbsolutePath());
+                    }
+
                     System.out.println(directories.outputDirectory());
                 }
             }
