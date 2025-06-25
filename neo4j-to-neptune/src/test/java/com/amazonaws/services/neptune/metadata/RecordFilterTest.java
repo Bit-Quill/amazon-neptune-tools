@@ -32,8 +32,8 @@ public class RecordFilterTest {
         tempFile.deleteOnExit();
         
         try (FileWriter writer = new FileWriter(tempFile)) {
-            writer.write("skip_vertices:\n");
-            writer.write("  by_id:\n");
+            writer.write("skipVertices:\n");
+            writer.write("  byId:\n");
             writer.write("    - \"123\"\n");
             writer.write("    - \"456\"\n");
         }
@@ -54,11 +54,11 @@ public class RecordFilterTest {
         int recordIndex = 0;
         for (CSVRecord record : records) {
             if (recordIndex == 0) {
-                assertTrue("Vertex 123 should be skipped", filter.shouldSkipVertex(record, vertexMetadata));
+                assertTrue("Vertex 123 should be skipped", filter.shouldSkipVertex(record));
             } else if (recordIndex == 1) {
-                assertTrue("Vertex 456 should be skipped", filter.shouldSkipVertex(record, vertexMetadata));
+                assertTrue("Vertex 456 should be skipped", filter.shouldSkipVertex(record));
             } else if (recordIndex == 2) {
-                assertFalse("Vertex 789 should not be skipped", filter.shouldSkipVertex(record, vertexMetadata));
+                assertFalse("Vertex 789 should not be skipped", filter.shouldSkipVertex(record));
             }
             recordIndex++;
         }
@@ -75,8 +75,8 @@ public class RecordFilterTest {
         tempFile.deleteOnExit();
         
         try (FileWriter writer = new FileWriter(tempFile)) {
-            writer.write("skip_vertices:\n");
-            writer.write("  by_label:\n");
+            writer.write("skipVertices:\n");
+            writer.write("  byLabel:\n");
             writer.write("    - \"TestData\"\n");
             writer.write("    - \"Deprecated\"\n");
         }
@@ -97,13 +97,13 @@ public class RecordFilterTest {
         int recordIndex = 0;
         for (CSVRecord record : records) {
             if (recordIndex == 0) {
-                assertFalse("Person vertex should not be skipped", filter.shouldSkipVertex(record, vertexMetadata));
+                assertFalse("Person vertex should not be skipped", filter.shouldSkipVertex(record));
             } else if (recordIndex == 1) {
-                assertTrue("TestData vertex should be skipped", filter.shouldSkipVertex(record, vertexMetadata));
+                assertTrue("TestData vertex should be skipped", filter.shouldSkipVertex(record));
             } else if (recordIndex == 2) {
-                assertTrue("Deprecated vertex should be skipped", filter.shouldSkipVertex(record, vertexMetadata));
+                assertTrue("Deprecated vertex should be skipped", filter.shouldSkipVertex(record));
             } else if (recordIndex == 3) {
-                assertFalse("Company vertex should not be skipped", filter.shouldSkipVertex(record, vertexMetadata));
+                assertFalse("Company vertex should not be skipped", filter.shouldSkipVertex(record));
             }
             recordIndex++;
         }
@@ -116,8 +116,8 @@ public class RecordFilterTest {
         tempFile.deleteOnExit();
         
         try (FileWriter writer = new FileWriter(tempFile)) {
-            writer.write("skip_vertices:\n");
-            writer.write("  by_id:\n");
+            writer.write("skipVertices:\n");
+            writer.write("  byId:\n");
             writer.write("    - \"123\"\n");
         }
 
@@ -135,7 +135,7 @@ public class RecordFilterTest {
         // First, skip vertex 123
         String vertexData = "123,Person,John";
         CSVRecord vertexRecord = CSVFormat.DEFAULT.parse(new StringReader(vertexData)).iterator().next();
-        filter.shouldSkipVertex(vertexRecord, vertexMetadata);
+        filter.shouldSkipVertex(vertexRecord);
         
         // Test edge records
         String edgeData = ",,,456,789,KNOWS\n,,,123,789,WORKS_FOR\n,,,456,123,MANAGES";
@@ -161,8 +161,8 @@ public class RecordFilterTest {
         tempFile.deleteOnExit();
         
         try (FileWriter writer = new FileWriter(tempFile)) {
-            writer.write("skip_edges:\n");
-            writer.write("  by_label:\n");
+            writer.write("skipEdges:\n");
+            writer.write("  byLabel:\n");
             writer.write("    - \"TEMP_RELATIONSHIP\"\n");
             writer.write("    - \"DEBUG_LINK\"\n");
         }
@@ -214,7 +214,7 @@ public class RecordFilterTest {
         // Test that nothing is skipped when no rules are configured
         String vertexData = "123,Person,John";
         CSVRecord vertexRecord = CSVFormat.DEFAULT.parse(new StringReader(vertexData)).iterator().next();
-        assertFalse(filter.shouldSkipVertex(vertexRecord, vertexMetadata));
+        assertFalse(filter.shouldSkipVertex(vertexRecord));
         
         String edgeData = ",,,,1,2,KNOWS";
         CSVRecord edgeRecord = CSVFormat.DEFAULT.parse(new StringReader(edgeData)).iterator().next();
@@ -228,14 +228,14 @@ public class RecordFilterTest {
         tempFile.deleteOnExit();
         
         try (FileWriter writer = new FileWriter(tempFile)) {
-            writer.write("skip_vertices:\n");
-            writer.write("  by_id:\n");
+            writer.write("skipVertices:\n");
+            writer.write("  byId:\n");
             writer.write("    - \"1\"\n");
             writer.write("    - \"2\"\n");
-            writer.write("  by_label:\n");
+            writer.write("  byLabel:\n");
             writer.write("    - \"TestData\"\n");
-            writer.write("skip_edges:\n");
-            writer.write("  by_label:\n");
+            writer.write("skipEdges:\n");
+            writer.write("  byLabel:\n");
             writer.write("    - \"TEMP\"\n");
         }
 

@@ -69,9 +69,9 @@ public class ConvertCsv implements Runnable {
     public void run() {
         try {
             // Load label mapping configuration
-            ConversionConfig labelMappingConfig = ConversionConfig.fromFile(conversionConfigFile);
-            LabelMapper labelMapper = new LabelMapper(labelMappingConfig);
-            RecordFilter recordFilter = new RecordFilter(labelMappingConfig);
+            ConversionConfig conversionConfig = ConversionConfig.fromFile(conversionConfigFile);
+            LabelMapper labelMapper = new LabelMapper(conversionConfig);
+            RecordFilter recordFilter = new RecordFilter(conversionConfig);
 
             Directories directories = Directories.createFor(outputDirectory);
 
@@ -102,7 +102,7 @@ public class ConvertCsv implements Runnable {
                     while (iterator.hasNext()) {
                         CSVRecord record = iterator.next();
                         if (vertexMetadata.isVertex(record)) {
-                            if (recordFilter.shouldSkipVertex(record, vertexMetadata)) {
+                            if (recordFilter.shouldSkipVertex(record)) {
                                 skippedVertexCount++;
                             } else {
                                 vertexFile.printRecord(vertexMetadata.toIterable(record));

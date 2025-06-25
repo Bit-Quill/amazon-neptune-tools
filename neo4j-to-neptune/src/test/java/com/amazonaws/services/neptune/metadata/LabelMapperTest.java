@@ -29,10 +29,10 @@ public class LabelMapperTest {
         tempFile.deleteOnExit();
         
         try (FileWriter writer = new FileWriter(tempFile)) {
-            writer.write("vertex_labels:\n");
+            writer.write("vertexLabels:\n");
             writer.write("  Person: Individual\n");
             writer.write("  Company: Organization\n");
-            writer.write("edge_labels:\n");
+            writer.write("edgeLabels:\n");
             writer.write("  WORKS_FOR: EMPLOYED_BY\n");
         }
         
@@ -77,18 +77,15 @@ public class LabelMapperTest {
         tempFile.deleteOnExit();
         
         try (FileWriter writer = new FileWriter(tempFile)) {
-            writer.write("vertex_labels:\n");
+            writer.write("vertexLabels:\n");
             writer.write("  Person: Individual\n");
             writer.write("  Company: Organization\n");
-            writer.write("edge_labels:\n");
+            writer.write("edgeLabels:\n");
             writer.write("  WORKS_FOR: EMPLOYED_BY\n");
             writer.write("  KNOWS: CONNECTED_TO\n");
         }
         
         ConversionConfig config = ConversionConfig.fromFile(tempFile);
-        
-        assertTrue(config.hasVertexMappings());
-        assertTrue(config.hasEdgeMappings());
         
         assertEquals(2, config.getVertexLabels().size());
         assertEquals(2, config.getEdgeLabels().size());

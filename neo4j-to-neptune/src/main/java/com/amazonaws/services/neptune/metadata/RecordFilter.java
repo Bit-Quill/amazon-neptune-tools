@@ -30,9 +30,9 @@ public class RecordFilter {
     private final Set<String> skippedVertexIds;
     
     public RecordFilter(ConversionConfig config) {
-        this.skipVertexIds = config.getSkipVertexIds();
-        this.skipVertexLabels = config.getSkipVertexLabels();
-        this.skipEdgeLabels = config.getSkipEdgeLabels();
+        this.skipVertexIds = config.getSkipVertices().getById();
+        this.skipVertexLabels = config.getSkipVertices().getByLabel();
+        this.skipEdgeLabels = config.getSkipEdges().getByLabel();
         this.skippedVertexIds = new HashSet<>();
     }
     
@@ -41,31 +41,33 @@ public class RecordFilter {
      * Also tracks skipped vertex IDs for edge filtering.
      * 
      * @param record The CSV record representing the vertex
-     * @param vertexMetadata Metadata for parsing vertex information
      * @return true if the vertex should be skipped, false otherwise
      */
-    public boolean shouldSkipVertex(CSVRecord record, VertexMetadata vertexMetadata) {
-        if (!hasSkipRules()) {
+    public boolean shouldSkipVertex(CSVRecord record) {
+        if (!hasVertexSkipRules()) {
             return false;
         }
         
         String vertexId = record.get(0); // _id is always the first column
-        String vertexLabels = getVertexLabels(record, vertexMetadata);
         
         // Check if vertex ID should be skipped
-        if (skipVertexIds.contains(vertexId)) {
+        if (!skipVertexIds.isEmpty() && skipVertexIds.contains(vertexId)) {
             skippedVertexIds.add(vertexId);
             return true;
         }
-        
-        // Check if any vertex label should be skipped
-        if (vertexLabels != null && !vertexLabels.isEmpty()) {
-            String[] labels = vertexLabels.split(":");
-            for (String label : labels) {
-                String trimmedLabel = label.trim();
-                if (!trimmedLabel.isEmpty() && skipVertexLabels.contains(trimmedLabel)) {
-                    skippedVertexIds.add(vertexId);
-                    return true;
+
+        // Only retrieve and check labels if we have label-based skip rules
+        if (!skipVertexLabels.isEmpty()) {
+            String vertexLabels = getVertexLabels(record);
+
+            if (vertexLabels != null && !vertexLabels.isEmpty()) {
+                String[] labels = vertexLabels.split(":");
+                for (String label : labels) {
+                    String trimmedLabel = label.trim();
+                    if (!trimmedLabel.isEmpty() && skipVertexLabels.contains(trimmedLabel)) {
+                        skippedVertexIds.add(vertexId);
+                        return true;
+                    }
                 }
             }
         }
@@ -81,6 +83,7 @@ public class RecordFilter {
      * @return true if the edge should be skipped, false otherwise
      */
     public boolean shouldSkipEdge(CSVRecord record, EdgeMetadata edgeMetadata) {
+        // An edge might still be skipped if its connected vertex is skipped
         if (!hasSkipRules()) {
             return false;
         }
@@ -96,7 +99,7 @@ public class RecordFilter {
         String startVertexId = record.get(firstColumnIndex);     // _start
         String endVertexId = record.get(firstColumnIndex + 1);   // _end
         String edgeType = record.get(firstColumnIndex + 2);      // _type
-        
+
         // Skip edge if either connected vertex was skipped
         if (skippedVertexIds.contains(startVertexId) || skippedVertexIds.contains(endVertexId)) {
             return true;
@@ -115,7 +118,7 @@ public class RecordFilter {
     /**
      * Gets the vertex labels from a CSV record.
      */
-    private String getVertexLabels(CSVRecord record, VertexMetadata vertexMetadata) {
+    private String getVertexLabels(CSVRecord record) {
         // In Neo4j CSV exports, _labels is typically at index 1 (after _id at index 0)
         if (record.size() > 1) {
             return record.get(1);
@@ -130,12 +133,20 @@ public class RecordFilter {
     public Set<String> getSkippedVertexIds() {
         return new HashSet<>(skippedVertexIds);
     }
-    
+
     /**
      * Checks if any skip rules are configured.
      */
     public boolean hasSkipRules() {
         return !skipVertexIds.isEmpty() || !skipVertexLabels.isEmpty() || !skipEdgeLabels.isEmpty();
+    }
+
+    /**
+     * Checks if vertex-specific skip rules are configured.
+     * Used for early optimization in vertex filtering.
+     */
+    private boolean hasVertexSkipRules() {
+        return !skipVertexIds.isEmpty() || !skipVertexLabels.isEmpty();
     }
     
     /**

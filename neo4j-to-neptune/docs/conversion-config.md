@@ -16,41 +16,41 @@ java -jar neo4j-to-neptune.jar convert-csv \
 
 ## YAML Configuration Format
 
-The configuration file should be in YAML format with sections for label mapping and record filtering:
+The configuration file should be in YAML format, using camelCase, with sections for label mapping and record filtering:
 
 ```yaml
 # Vertex label mappings
-vertex_labels:
+vertexLabels:
   OldVertexLabel: NewVertexLabel
   Person: Individual
   Company: Organization
   Product: Item
 
 # Edge label mappings  
-edge_labels:
+edgeLabels:
   OLD_RELATIONSHIP_TYPE: NEW_RELATIONSHIP_TYPE
   WORKS_FOR: EMPLOYED_BY
   LIVES_IN: RESIDES_IN
   KNOWS: CONNECTED_TO
 
 # Skip vertices configuration
-skip_vertices:
+skipVertices:
   # Skip vertices by their specific IDs
-  by_id:
+  byId:
     - "vertex_123"
     - "vertex_456"
     - "user_999"
   
   # Skip vertices by their labels
-  by_label:
+  byLabel:
     - "TestData"
     - "Deprecated"
     - "TempNode"
 
 # Skip edges configuration
-skip_edges:
+skipEdges:
   # Skip edges by their relationship types
-  by_label:
+  byLabel:
     - "TEMP_RELATIONSHIP"
     - "DEBUG_LINK"
     - "OLD_CONNECTION"
@@ -59,8 +59,8 @@ _**Note:** label only for edge as Neo4j default csv export doesn't include origi
 
 _**Tip:** To avoid long bullet lists, one could use the alternative YAML format for list input:_
 ```yaml
-skip_vertices:
-  by_id: ["vertex_123","vertex_456","user_999"]
+skipVertices:
+  byId: ["vertex_123","vertex_456","user_999"]
 ```
 
 ## Label Mapping
@@ -152,20 +152,20 @@ Given a Neo4j export with:
 And the following configuration:
 
 ```yaml
-vertex_labels:
+vertexLabels:
   Person: Individual
   Manager: Supervisor
   Company: Organization
 
-edge_labels:
+edgeLabels:
   REPORTS_TO: MANAGED_BY
 
-skip_vertices:
-  by_label:
+skipVertices:
+  byLabel:
     - "TestData"
 
-skip_edges:
-  by_label:
+skipEdges:
+  byLabel:
     - "TEMP_RELATIONSHIP"
 ```
 
