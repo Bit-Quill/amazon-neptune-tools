@@ -105,6 +105,28 @@ public class ConversionConfigTest {
         assertTrue(config.getSkipEdges().getByLabel().isEmpty());
 
     }
+
+    @Test
+    public void testPartialEmptyYamlConfiguration() throws IOException {
+        // Test with only some sections present
+        File tempFile = File.createTempFile("test-partial-empty", ".yaml");
+        tempFile.deleteOnExit();
+
+        try (FileWriter writer = new FileWriter(tempFile)) {
+            writer.write("vertexLabels:\n");
+            writer.write("skipVertices:\n");
+            writer.write("  byLabel:\n");
+        }
+
+        ConversionConfig config = ConversionConfig.fromFile(tempFile);
+
+        assertTrue(config.getVertexLabels().isEmpty());
+        assertTrue(config.getEdgeLabels().isEmpty());
+        assertTrue(config.getSkipVertices().getById().isEmpty());
+        assertTrue(config.getSkipVertices().getByLabel().isEmpty());
+        assertTrue(config.getSkipEdges().getByLabel().isEmpty());
+
+    }
     
     @Test
     public void testEmptyYamlFile() throws IOException {

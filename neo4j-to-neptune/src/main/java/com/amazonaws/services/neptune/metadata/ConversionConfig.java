@@ -95,6 +95,31 @@ public class ConversionConfig {
                 config = new ConversionConfig();
             }
 
+            // Ensure nested objects are initialized when yaml fields are left empty
+            if (config.skipVertices == null) {
+                config.skipVertices = new SkipVertices();
+            }
+            if (config.skipEdges == null) {
+                config.skipEdges = new SkipEdges();
+            }
+            if (config.vertexLabels == null) {
+                config.vertexLabels = new HashMap<>();
+            }
+            if (config.edgeLabels == null) {
+                config.edgeLabels = new HashMap<>();
+            }
+
+            // Ensure nested sets are initialized
+            if (config.skipVertices.byId == null) {
+                config.skipVertices.byId = new HashSet<>();
+            }
+            if (config.skipVertices.byLabel == null) {
+                config.skipVertices.byLabel = new HashSet<>();
+            }
+            if (config.skipEdges.byLabel == null) {
+                config.skipEdges.byLabel = new HashSet<>();
+            }
+
             return config;
         }
     }
