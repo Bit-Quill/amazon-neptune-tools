@@ -12,6 +12,9 @@ permissions and limitations under the License.
 
 package com.amazonaws.services.neptune.metadata;
 
+import java.util.Optional;
+import java.util.Set;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.csv.CSVRecord;
 
 import java.util.Arrays;
@@ -25,7 +28,7 @@ public class VertexMetadata {
         return parse(record, parser, null);
     }
 
-    public static VertexMetadata parse(CSVRecord record, PropertyValueParser parser, LabelMapper labelMapper) {
+    public static VertexMetadata parse(CSVRecord record, PropertyValueParser parser, ConversionConfig conversionConfig) {
 
         Headers headers = new Headers();
 
@@ -49,19 +52,19 @@ public class VertexMetadata {
                     headers.add(new Property(header));
             }
         }
-        return new VertexMetadata(headers, lastColumnIndex, parser, labelMapper);
+        return new VertexMetadata(headers, lastColumnIndex, parser, conversionConfig);
     }
 
     private final Headers headers;
     private final int lastColumnIndex;
     private final PropertyValueParser propertyValueParser;
-    private final LabelMapper labelMapper;
+    private final ConversionConfig conversionConfig;
 
-    private VertexMetadata(Headers headers, int lastColumnIndex, PropertyValueParser parser, LabelMapper labelMapper) {
+    private VertexMetadata(Headers headers, int lastColumnIndex, PropertyValueParser parser, ConversionConfig conversionConfig) {
         this.headers = headers;
         this.lastColumnIndex = lastColumnIndex;
         this.propertyValueParser = parser;
-        this.labelMapper = labelMapper;
+        this.conversionConfig = conversionConfig;
     }
 
     public List<String> headers() {
@@ -76,8 +79,11 @@ public class VertexMetadata {
         return !record.get(0).isEmpty();
     }
 
-    public Iterable<String> toIterable(CSVRecord record) {
-        return () -> new Iterator<String>() {
+    public Optional<Iterable<String>> toIterable(CSVRecord record) {
+        if (shouldSkipVertex(record)) {
+            return Optional.empty();
+        }
+        return Optional.of(() -> new Iterator<String>() {
             int index = 0;
 
             @Override
@@ -91,13 +97,7 @@ public class VertexMetadata {
 
                 if (header.equals(Token.LABEL)) {
                     String originalLabels = record.get(index++);
-                    if (labelMapper != null) {
-                        return labelMapper.mapVertexLabels(originalLabels);
-                    } else {
-                        return Arrays.stream(originalLabels.split(":"))
-                                .filter(s -> !s.isEmpty())
-                                .collect(Collectors.joining(";"));
-                    }
+                    return mapVertexLabels(originalLabels);
                 } else {
                     PropertyValue propertyValue = propertyValueParser.parse(record.get(index));
                     if (propertyValue.isMultiValued()) {
@@ -108,6 +108,57 @@ public class VertexMetadata {
                     return propertyValue.value();
                 }
             }
-        };
+        });
+    }
+
+    private String mapVertexLabels(String originalLabels) {
+        if (originalLabels == null || originalLabels.trim().isEmpty()) {
+            return originalLabels;
+        }
+
+        return Arrays.stream(originalLabels.split(":"))
+                .filter(s -> !s.isEmpty())
+                .map(label -> conversionConfig.getVertexLabels().getOrDefault(label.trim(), label.trim()))
+                .collect(Collectors.joining(";"));
+    }
+
+    private boolean shouldSkipVertex(CSVRecord record) {
+        Set<String> skipVertexIds = conversionConfig.getSkipVertices().getById();
+        Set<String> skipVertexLabels = conversionConfig.getSkipVertices().getByLabel();
+        if (CollectionUtils.isEmpty(skipVertexLabels) && CollectionUtils.isEmpty(skipVertexIds)) {
+            return false;
+        }
+
+        String vertexId = record.get(0); // _id is always the first column
+
+        // Check if vertex ID should be skipped
+        if (!skipVertexIds.isEmpty() && skipVertexIds.contains(vertexId)) {
+            return true;
+        }
+
+        // Only retrieve and check labels if we have label-based skip rules
+        if (!skipVertexLabels.isEmpty()) {
+            String vertexLabels = getVertexLabels(record);
+
+            if (vertexLabels != null && !vertexLabels.isEmpty()) {
+                String[] labels = vertexLabels.split(":");
+                for (String label : labels) {
+                    String trimmedLabel = label.trim();
+                    if (!trimmedLabel.isEmpty() && skipVertexLabels.contains(trimmedLabel)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private String getVertexLabels(CSVRecord record) {
+        // In Neo4j CSV exports, _labels is typically at index 1 (after _id at index 0)
+        if (record.size() > 1) {
+            return record.get(1);
+        }
+        return null;
     }
 }

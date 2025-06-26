@@ -20,6 +20,8 @@ import com.amazonaws.services.neptune.util.Timer;
 import com.github.rvesse.airline.annotations.Command;
 import com.github.rvesse.airline.annotations.Option;
 import com.github.rvesse.airline.annotations.restrictions.*;
+import java.io.IOException;
+import java.util.concurrent.atomic.AtomicLong;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 
@@ -82,9 +84,9 @@ public class ConvertCsv implements Runnable {
 
                 Iterator<CSVRecord> iterator = parser.iterator();
 
-                long vertexCount = 0;
+                final AtomicLong vertexCount = new AtomicLong(0);
                 long edgeCount = 0;
-                long skippedVertexCount = 0;
+                final AtomicLong skippedVertexCount = new AtomicLong(0);
                 long skippedEdgeCount = 0;
 
                 if (iterator.hasNext()) {
@@ -93,7 +95,7 @@ public class ConvertCsv implements Runnable {
                     VertexMetadata vertexMetadata = VertexMetadata.parse(
                             headers,
                             new PropertyValueParser(multiValuedNodePropertyPolicy, semiColonReplacement, inferTypes),
-                            labelMapper);
+                            conversionConfig);
                     EdgeMetadata edgeMetadata = EdgeMetadata.parse(
                             headers,
                             new PropertyValueParser(multiValuedRelationshipPropertyPolicy, semiColonReplacement, inferTypes),
@@ -102,12 +104,14 @@ public class ConvertCsv implements Runnable {
                     while (iterator.hasNext()) {
                         CSVRecord record = iterator.next();
                         if (vertexMetadata.isVertex(record)) {
-                            if (recordFilter.shouldSkipVertex(record)) {
-                                skippedVertexCount++;
-                            } else {
-                                vertexFile.printRecord(vertexMetadata.toIterable(record));
-                                vertexCount++;
-                            }
+                            vertexMetadata.toIterable(record).ifPresentOrElse(it -> {
+                                try {
+                                    vertexFile.printRecord(it);
+                                    vertexCount.getAndIncrement();
+                                } catch (IOException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }, skippedVertexCount::getAndIncrement);
                         } else if (edgeMetadata.isEdge(record)) {
                             if (recordFilter.shouldSkipEdge(record, edgeMetadata)) {
                                 skippedEdgeCount++;
