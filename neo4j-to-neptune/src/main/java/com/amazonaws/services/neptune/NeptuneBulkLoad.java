@@ -20,8 +20,8 @@ import software.amazon.awssdk.regions.Region;
 
 import java.io.File;
 
-@Command(name = "bulk-load-to-neptune", description = "Upload CSV files to S3 and bulk load into Neptune")
-public class BulkLoadToNeptune implements Runnable {
+@Command(name = "neptune-bulk-load", description = "Upload CSV files to S3 and bulk load into Neptune")
+public class NeptuneBulkLoad implements Runnable {
 
     @Option(name = {"--bucket-name"}, description = "S3 bucket name for CSV files output")
     @Required
@@ -38,9 +38,9 @@ public class BulkLoadToNeptune implements Runnable {
     @Once
     private File csvOutputDir;
 
-    @Option(name = {"--s3-prefix"}, description = "S3 key prefix for uploaded files (default: neptune/)")
+    @Option(name = {"--s3-prefix"}, description = "S3 key prefix for uploaded files (default: neptune)")
     @Once
-    private String s3Prefix = "neptune/";
+    private String s3Prefix = "neptune";
 
     @Option(name = {"--neptune-endpoint"}, description = "Neptune cluster endpoint")
     @Required
@@ -80,27 +80,24 @@ public class BulkLoadToNeptune implements Runnable {
                     neptuneEndpoint,
                     iamRoleArn)) {
 
-                String s3SourceUri = "s3://" + bucketName + "/" + s3Prefix;
-                String loadId = null;
-
                 if (!loadOnly) {
-                    String uploadedS3Path = neptuneBulkLoader.uploadCsvFilesToS3(csvOutputDir.getAbsolutePath());
-
-                    if (uploadedS3Path == null) {
-                        System.exit(1);
-                    }
+                    neptuneBulkLoader.uploadCsvFilesToS3(csvOutputDir.getAbsolutePath());
                 }
 
                 if (!uploadOnly) {
-                    loadId = neptuneBulkLoader.startNeptuneBulkLoad(s3SourceUri);
+                    String trimmedBucketName = bucketName.replaceAll("/+$", "");
+                    String trimmedS3Prefix = s3Prefix.replaceAll("/+$", "");
+                    String s3SourceUri = "s3://" + trimmedBucketName + "/" + trimmedS3Prefix;
+                    String loadId = neptuneBulkLoader.startNeptuneBulkLoad(s3SourceUri);
 
                     if (loadId != null) {
                         System.out.println("Neptune bulk load started successfully! Load ID: " + loadId);
+
                         if (monitor) {
                             neptuneBulkLoader.monitorLoadProgress(loadId);
                         }
                     } else {
-                        System.err.println("Failed to start Neptune bulk load! Load ID: " + loadId);
+                        System.err.println("Failed to start Neptune bulk load");
                         System.exit(1);
                     }
                 }
