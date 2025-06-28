@@ -19,7 +19,9 @@ import com.github.rvesse.airline.help.Help;
         description = "Export data from Neo4j to Neptune",
         defaultCommand = Help.class,
         commands = {
+                NeptuneBulkLoad.class,
                 ConvertCsv.class,
+                ConvertBulkLoad.class,
                 Help.class
         })
 public class Neo4jToNeptuneCli {
