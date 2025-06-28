@@ -29,7 +29,6 @@ import java.time.Duration;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeoutException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -157,7 +156,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
     /**
      * Upload a specific CSV file to S3 asynchronously
      */
-    private CompletableFuture<Boolean> uploadFileAsync(String localFilePath, String s3Key) throws Exception {
+    protected CompletableFuture<Boolean> uploadFileAsync(String localFilePath, String s3Key) throws Exception {
         // Create a File object to check existence
         File file = new File(localFilePath);
 
@@ -268,7 +267,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
     /**
      * Test connectivity to Neptune endpoint
      */
-    private boolean testNeptuneConnectivity() {
+    protected boolean testNeptuneConnectivity() {
         try {
             System.out.println("Testing connectivity to Neptune endpoint...");
             String testEndpoint = "https://" + neptuneEndpoint + ":" + NEPTUNE_PORT + "/status";
