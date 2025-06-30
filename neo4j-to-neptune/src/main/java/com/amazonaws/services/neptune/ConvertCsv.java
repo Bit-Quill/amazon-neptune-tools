@@ -21,6 +21,8 @@ import com.github.rvesse.airline.annotations.Command;
 import com.github.rvesse.airline.annotations.Option;
 import com.github.rvesse.airline.annotations.restrictions.*;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
@@ -72,8 +74,6 @@ public class ConvertCsv implements Runnable {
         try {
             // Load label mapping configuration
             ConversionConfig conversionConfig = ConversionConfig.fromFile(conversionConfigFile);
-            LabelMapper labelMapper = new LabelMapper(conversionConfig);
-            RecordFilter recordFilter = new RecordFilter(conversionConfig);
 
             Directories directories = Directories.createFor(outputDirectory);
 
@@ -85,9 +85,9 @@ public class ConvertCsv implements Runnable {
                 Iterator<CSVRecord> iterator = parser.iterator();
 
                 final AtomicLong vertexCount = new AtomicLong(0);
-                long edgeCount = 0;
+                final AtomicLong edgeCount = new AtomicLong(0);
                 final AtomicLong skippedVertexCount = new AtomicLong(0);
-                long skippedEdgeCount = 0;
+                final AtomicLong skippedEdgeCount = new AtomicLong(0);
 
                 if (iterator.hasNext()) {
                     CSVRecord headers = iterator.next();
@@ -99,7 +99,7 @@ public class ConvertCsv implements Runnable {
                     EdgeMetadata edgeMetadata = EdgeMetadata.parse(
                             headers,
                             new PropertyValueParser(multiValuedRelationshipPropertyPolicy, semiColonReplacement, inferTypes),
-                            labelMapper);
+                            conversionConfig, vertexMetadata.getSkippedVertexIds());
 
                     while (iterator.hasNext()) {
                         CSVRecord record = iterator.next();
@@ -113,12 +113,14 @@ public class ConvertCsv implements Runnable {
                                 }
                             }, skippedVertexCount::getAndIncrement);
                         } else if (edgeMetadata.isEdge(record)) {
-                            if (recordFilter.shouldSkipEdge(record, edgeMetadata)) {
-                                skippedEdgeCount++;
-                            } else {
-                                edgeFile.printRecord(edgeMetadata.toIterable(record));
-                                edgeCount++;
-                            }
+                            edgeMetadata.toIterable(record).ifPresentOrElse(it -> {
+                                try {
+                                    edgeFile.printRecord(it);
+                                    edgeCount.getAndIncrement();
+                                } catch (IOException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }, skippedEdgeCount::getAndIncrement);
                         } else {
                             throw new IllegalStateException("Unable to parse record: " + record.toString());
                         }
@@ -130,15 +132,21 @@ public class ConvertCsv implements Runnable {
                     System.err.println("Vertices: " + vertexCount);
                     System.err.println("Edges   : " + edgeCount);
 
-                    if (recordFilter.hasSkipRules()) {
+                    if (conversionConfig.hasSkipRules()) {
                         System.err.println("Skipped vertices: " + skippedVertexCount);
                         System.err.println("Skipped edges  : " + skippedEdgeCount);
-                        System.err.println(recordFilter.getSkipStatistics());
+                        System.err.println("Skip rules: " +
+                                (!conversionConfig.getSkipVertices().getById().isEmpty() ?
+                                        conversionConfig.getSkipVertices().getById().size() + " vertex IDs, " : "") +
+                                (!conversionConfig.getSkipVertices().getByLabel().isEmpty() ?
+                                        conversionConfig.getSkipVertices().getByLabel().size() + " vertex labels, " : "") +
+                                (!conversionConfig.getSkipEdges().getByLabel().isEmpty()  ?
+                                        conversionConfig.getSkipEdges().getByLabel().size() + " edge labels" : ""));
                     }
 
                     System.err.println("Output  : " + directories.outputDirectory());
 
-                    if (labelMapper.hasVertexMappings() || labelMapper.hasEdgeMappings()) {
+                    if (!conversionConfig.getVertexLabels().isEmpty() || !conversionConfig.getEdgeLabels().isEmpty()) {
                         System.err.println("Label mappings applied from: " + conversionConfigFile.getAbsolutePath());
                     }
 

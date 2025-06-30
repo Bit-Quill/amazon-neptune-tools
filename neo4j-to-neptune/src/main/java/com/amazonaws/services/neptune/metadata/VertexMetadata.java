@@ -12,21 +12,14 @@ permissions and limitations under the License.
 
 package com.amazonaws.services.neptune.metadata;
 
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
+
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.csv.CSVRecord;
 
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
 import java.util.stream.Collectors;
 
 public class VertexMetadata {
-
-    public static VertexMetadata parse(CSVRecord record, PropertyValueParser parser) {
-        return parse(record, parser, null);
-    }
 
     public static VertexMetadata parse(CSVRecord record, PropertyValueParser parser, ConversionConfig conversionConfig) {
 
@@ -59,12 +52,14 @@ public class VertexMetadata {
     private final int lastColumnIndex;
     private final PropertyValueParser propertyValueParser;
     private final ConversionConfig conversionConfig;
+    private final Set<String> skippedVertexIds;
 
     private VertexMetadata(Headers headers, int lastColumnIndex, PropertyValueParser parser, ConversionConfig conversionConfig) {
         this.headers = headers;
         this.lastColumnIndex = lastColumnIndex;
         this.propertyValueParser = parser;
-        this.conversionConfig = conversionConfig;
+        this.conversionConfig = conversionConfig == null ? new ConversionConfig() : conversionConfig;
+        this.skippedVertexIds = new HashSet<>();
     }
 
     public List<String> headers() {
@@ -111,7 +106,7 @@ public class VertexMetadata {
         });
     }
 
-    private String mapVertexLabels(String originalLabels) {
+    String mapVertexLabels(String originalLabels) {
         if (originalLabels == null || originalLabels.trim().isEmpty()) {
             return originalLabels;
         }
@@ -122,7 +117,7 @@ public class VertexMetadata {
                 .collect(Collectors.joining(";"));
     }
 
-    private boolean shouldSkipVertex(CSVRecord record) {
+    boolean shouldSkipVertex(CSVRecord record) {
         Set<String> skipVertexIds = conversionConfig.getSkipVertices().getById();
         Set<String> skipVertexLabels = conversionConfig.getSkipVertices().getByLabel();
         if (CollectionUtils.isEmpty(skipVertexLabels) && CollectionUtils.isEmpty(skipVertexIds)) {
@@ -133,6 +128,7 @@ public class VertexMetadata {
 
         // Check if vertex ID should be skipped
         if (!skipVertexIds.isEmpty() && skipVertexIds.contains(vertexId)) {
+            skippedVertexIds.add(vertexId);
             return true;
         }
 
@@ -145,6 +141,7 @@ public class VertexMetadata {
                 for (String label : labels) {
                     String trimmedLabel = label.trim();
                     if (!trimmedLabel.isEmpty() && skipVertexLabels.contains(trimmedLabel)) {
+                        skippedVertexIds.add(vertexId);
                         return true;
                     }
                 }
@@ -160,5 +157,12 @@ public class VertexMetadata {
             return record.get(1);
         }
         return null;
+    }
+
+    /**
+     * Get the set of skipped vertex IDs for edge filtering
+     */
+    public Set<String> getSkippedVertexIds() {
+        return Collections.unmodifiableSet(skippedVertexIds);
     }
 }

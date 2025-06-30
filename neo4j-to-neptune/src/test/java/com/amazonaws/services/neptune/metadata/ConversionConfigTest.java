@@ -253,4 +253,30 @@ public class ConversionConfigTest {
         assertNotNull(toString);
         assertTrue(toString.contains("ConversionConfig"));
     }
+
+    @Test
+    public void testConfigurationLoading() throws IOException {
+        // Create a temporary YAML file
+        File tempFile = File.createTempFile("test-config", ".yaml");
+        tempFile.deleteOnExit();
+
+        try (FileWriter writer = new FileWriter(tempFile)) {
+            writer.write("vertexLabels:\n");
+            writer.write("  Person: Individual\n");
+            writer.write("  Company: Organization\n");
+            writer.write("edgeLabels:\n");
+            writer.write("  WORKS_FOR: EMPLOYED_BY\n");
+            writer.write("  KNOWS: CONNECTED_TO\n");
+        }
+
+        ConversionConfig config = ConversionConfig.fromFile(tempFile);
+
+        assertEquals(2, config.getVertexLabels().size());
+        assertEquals(2, config.getEdgeLabels().size());
+
+        assertEquals("Individual", config.getVertexLabels().get("Person"));
+        assertEquals("Organization", config.getVertexLabels().get("Company"));
+        assertEquals("EMPLOYED_BY", config.getEdgeLabels().get("WORKS_FOR"));
+        assertEquals("CONNECTED_TO", config.getEdgeLabels().get("KNOWS"));
+    }
 }

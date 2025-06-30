@@ -124,4 +124,11 @@ public class ConversionConfig {
         }
     }
 
+    /**
+     * Checks if any skip rules are configured.
+     */
+    public boolean hasSkipRules() {
+        return !skipVertices.byId.isEmpty() || !skipVertices.getByLabel().isEmpty() || !skipEdges.getByLabel().isEmpty();
+    }
+
 }

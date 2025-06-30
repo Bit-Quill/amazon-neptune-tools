@@ -14,20 +14,15 @@ package com.amazonaws.services.neptune.metadata;
 
 import org.apache.commons.csv.CSVRecord;
 
-import java.util.Iterator;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Supplier;
 
 public class EdgeMetadata {
 
     private static final Supplier<String> ID_GENERATOR = () -> UUID.randomUUID().toString();
 
-    static EdgeMetadata parse(CSVRecord record, Supplier<String> idGenerator, PropertyValueParser parser) {
-        return parse(record, idGenerator, parser, null);
-    }
-
-    static EdgeMetadata parse(CSVRecord record, Supplier<String> idGenerator, PropertyValueParser parser, LabelMapper labelMapper) {
+    static EdgeMetadata parse(CSVRecord record, Supplier<String> idGenerator, PropertyValueParser parser,
+                              ConversionConfig conversionConfig, Set<String> skippedVertexIds) {
 
         Headers headers = new Headers();
         headers.add(Token.ID);
@@ -57,33 +52,33 @@ public class EdgeMetadata {
                 firstColumnIndex++;
             }
         }
-        return new EdgeMetadata(headers, firstColumnIndex, idGenerator, parser, labelMapper);
+        return new EdgeMetadata(headers, firstColumnIndex, idGenerator, parser, conversionConfig, skippedVertexIds);
     }
 
-    public static EdgeMetadata parse(CSVRecord record, PropertyValueParser parser) {
-        return parse(record, ID_GENERATOR, parser, null);
-    }
-
-    public static EdgeMetadata parse(CSVRecord record, PropertyValueParser parser, LabelMapper labelMapper) {
-        return parse(record, ID_GENERATOR, parser, labelMapper);
+    public static EdgeMetadata parse(CSVRecord record, PropertyValueParser parser,
+                                     ConversionConfig conversionConfig, Set<String> skippedVertexIds) {
+        return parse(record, ID_GENERATOR, parser, conversionConfig, skippedVertexIds);
     }
 
     private final Headers headers;
     private final int firstColumnIndex;
     private final Supplier<String> idGenerator;
     private final PropertyValueParser propertyValueParser;
-    private final LabelMapper labelMapper;
+    private final ConversionConfig conversionConfig;
+    private final Set<String> skippedVertexIds;
 
     private EdgeMetadata(Headers headers,
                          int firstColumnIndex,
                          Supplier<String> idGenerator,
                          PropertyValueParser parser,
-                         LabelMapper labelMapper) {
+                         ConversionConfig conversionConfig,
+                         Set<String> skippedVertexIds) {
         this.headers = headers;
         this.firstColumnIndex = firstColumnIndex;
         this.idGenerator = idGenerator;
         this.propertyValueParser = parser;
-        this.labelMapper = labelMapper;
+        this.conversionConfig = conversionConfig;
+        this.skippedVertexIds = skippedVertexIds != null ? skippedVertexIds : new HashSet<>();
     }
 
     public List<String> headers() {
@@ -100,8 +95,11 @@ public class EdgeMetadata {
                 (!record.get(firstColumnIndex + 2).isEmpty());
     }
 
-    public Iterable<String> toIterable(CSVRecord record) {
-        return () -> new Iterator<String>() {
+    public Optional<Iterable<String>> toIterable(CSVRecord record) {
+        if (shouldSkipEdge(record)) {
+            return Optional.empty();
+        }
+        return Optional.of(() -> new Iterator<String>() {
             int currentColumnIndex = firstColumnIndex - 1;
 
             @Override
@@ -121,8 +119,8 @@ public class EdgeMetadata {
                     String value = record.get(currentColumnIndex);
 
                     // Apply label mapping for edge labels
-                    if (header.equals(Token.LABEL) && labelMapper != null) {
-                        value = labelMapper.mapEdgeLabel(value);
+                    if (header.equals(Token.LABEL)) {
+                        value = mapEdgeLabel(value);
                         currentColumnIndex++;
                         return value;
                     } else {
@@ -133,6 +131,60 @@ public class EdgeMetadata {
                     }
                 }
             }
-        };
+        });
     }
+
+    /**
+     * Maps edge labels. Neo4j edge types are single values.
+     *
+     * @param originalLabel The original edge type from Neo4j
+     * @return The mapped edge type, or original if no mapping exists
+     */
+    String mapEdgeLabel(String originalLabel) {
+        if (originalLabel == null || originalLabel.trim().isEmpty()) {
+            return originalLabel;
+        }
+
+        return conversionConfig.getEdgeLabels().getOrDefault(originalLabel.trim(), originalLabel.trim());
+    }
+
+    /**
+     * Determines if an edge should be skipped based on its ID, label, or connected vertices.
+     *
+     * @param record The CSV record representing the edge
+     * @return true if the edge should be skipped, false otherwise
+     */
+    boolean shouldSkipEdge(CSVRecord record) {
+        // An edge might still be skipped if its connected vertex is skipped
+        Set<String> skipEdgeLabels = conversionConfig.getSkipEdges().getByLabel();
+        if (!conversionConfig.hasSkipRules()) {
+            return false;
+        }
+
+        // Make sure we have enough columns for edge data
+        if (record.size() <= firstColumnIndex + 2) {
+            return false; // Not enough data to be a valid edge
+        }
+
+        // The actual edge data starts at firstColumnIndex
+        String startVertexId = record.get(firstColumnIndex);     // _start
+        String endVertexId = record.get(firstColumnIndex + 1);   // _end
+        String edgeType = record.get(firstColumnIndex + 2);      // _type
+
+        // Skip edge if either connected vertex was skipped, note this does rely on nodes being processed first
+        if (!skippedVertexIds.isEmpty() &&
+                (skippedVertexIds.contains(startVertexId) || skippedVertexIds.contains(endVertexId)))  {
+            return true;
+        }
+
+        // Check if edge type/label should be skipped
+        if (edgeType != null && !edgeType.trim().isEmpty() && skipEdgeLabels.contains(edgeType.trim())) {
+            return true;
+        }
+
+        // If needed, this could be extended to support edge property-based filtering.
+
+        return false;
+    }
+
 }
