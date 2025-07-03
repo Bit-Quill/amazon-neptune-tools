@@ -1,5 +1,5 @@
 /*
-Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+Copyright 2025 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Licensed under the Apache License, Version 2.0 (the "License").
 You may not use this file except in compliance with the License.
 A copy of the License is located at
@@ -14,11 +14,13 @@ package com.amazonaws.services.neptune;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.http.HttpClient;
 import java.nio.file.Files;
 
 import com.amazonaws.services.neptune.util.NeptuneBulkLoader;
 
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3AsyncClient;
 
 /**
  * Test data provider utility class for Neptune bulk loader tests
@@ -38,6 +40,33 @@ public class TestDataProvider {
     public static final String EDGES_CSV = "edges.csv";
     public static final String S3_KEY_FOR_UPLOAD_FILE_ASYNC_VERTICES = S3_KEY + "/" + VERTICIES_CSV;
     public static final String S3_KEY_FOR_UPLOAD_FILE_ASYNC_EDGES = S3_KEY + "/" + EDGES_CSV;
+    public static final String LOAD_ID_0 = "00000000-0000-0000-0000-000000000000";
+    public static final String LOAD_ID_1 = "00000000-0000-0000-0000-000000000001";
+    public static final String LOAD_ID_2 = "00000000-0000-0000-0000-000000000002";
+    public static final String LOAD_ID_3 = "00000000-0000-0000-0000-000000000003";
+
+    // Load status constants - completed statuses
+    public static final String LOAD_COMPLETED = "LOAD_COMPLETED";
+    public static final String LOAD_COMMITTED_W_WRITE_CONFLICTS = "LOAD_COMMITTED_W_WRITE_CONFLICTS";
+
+    // Load status constants - in-progress statuses
+    public static final String LOAD_IN_PROGRESS = "LOAD_IN_PROGRESS";
+    public static final String LOAD_STARTING = "LOAD_STARTING";
+    public static final String LOAD_QUEUED = "LOAD_QUEUED";
+    public static final String LOAD_COMMITTING = "LOAD_COMMITTING";
+
+    // Load status constants - failure statuses
+    public static final String LOAD_FAILED = "LOAD_FAILED";
+    public static final String LOAD_CANCELLED = "LOAD_CANCELLED";
+    public static final String LOAD_CANCELLED_BY_USER = "LOAD_CANCELLED_BY_USER";
+    public static final String LOAD_CANCELLED_DUE_TO_ERRORS = "LOAD_CANCELLED_DUE_TO_ERRORS";
+    public static final String LOAD_UNEXPECTED_ERROR = "LOAD_UNEXPECTED_ERROR";
+    public static final String LOAD_S3_READ_ERROR = "LOAD_S3_READ_ERROR";
+    public static final String LOAD_S3_ACCESS_DENIED_ERROR = "LOAD_S3_ACCESS_DENIED_ERROR";
+    public static final String LOAD_DATA_DEADLOCK = "LOAD_DATA_DEADLOCK";
+    public static final String LOAD_DATA_FAILED_DUE_TO_FEED_MODIFIED_OR_DELETED = "LOAD_DATA_FAILED_DUE_TO_FEED_MODIFIED_OR_DELETED";
+    public static final String LOAD_FAILED_BECAUSE_DEPENDENCY_NOT_SATISFIED = "LOAD_FAILED_BECAUSE_DEPENDENCY_NOT_SATISFIED";
+    public static final String LOAD_FAILED_INVALID_REQUEST = "LOAD_FAILED_INVALID_REQUEST";
 
     public static NeptuneBulkLoader createNeptuneBulkLoader(
             String bucket, String s3Prefix, Region region, String neptuneEndpoint, String iamRoleArn) {
@@ -62,6 +91,24 @@ public class TestDataProvider {
         )) {
             return loader;
         }
+    }
+
+    /**
+     * Creates a NeptuneBulkLoader with custom HttpClient and S3AsyncClient for testing
+     * @param httpClient The HttpClient to use for HTTP requests
+     * @param s3AsyncClient The S3AsyncClient to use for S3 operations
+     * @return NeptuneBulkLoader instance with the provided clients
+     */
+    public static NeptuneBulkLoader createNeptuneBulkLoader(HttpClient httpClient, S3AsyncClient s3AsyncClient) {
+        return new NeptuneBulkLoader(
+            BUCKET,
+            S3_PREFIX,
+            REGION_US_EAST_2,
+            NEPTUNE_ENDPOINT,
+            IAM_ROLE_ARN,
+            httpClient,
+            s3AsyncClient
+        );
     }
 
     /**
