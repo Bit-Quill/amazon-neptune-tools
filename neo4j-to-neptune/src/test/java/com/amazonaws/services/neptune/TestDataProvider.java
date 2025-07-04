@@ -32,8 +32,10 @@ public class TestDataProvider {
     public static final String BUCKET = "test-neptune-bucket";
     public static final String S3_PREFIX = "test-prefix";
     public static final String S3_KEY = "test-s3-key";
+    public static final String CONVERT_CSV_TIMESTAMP = "1751659751530";
+    public static final String S3_SOURCE_URI = "s3://" + BUCKET + "/" + S3_PREFIX + CONVERT_CSV_TIMESTAMP +"/";
     public static final Region REGION_US_EAST_2 = Region.US_EAST_2;
-    public static final String NEPTUNE_ENDPOINT = "test-neptune.cluster-abc123.us-east-2.neptune.amazonaws.com";
+    public static final String NEPTUNE_ENDPOINT = "test-neptune.cluster-abc123." + REGION_US_EAST_2 + ".neptune.amazonaws.com";
     public static final String IAM_ROLE_ARN = "arn:aws:iam::123456789012:role/TestNeptuneRole";
     public static final String TEMP_FOLDER_NAME = "TEST_TEMP_FOLDER";
     public static final String VERTICIES_CSV = "vertices.csv";
@@ -42,8 +44,10 @@ public class TestDataProvider {
     public static final String S3_KEY_FOR_UPLOAD_FILE_ASYNC_EDGES = S3_KEY + "/" + EDGES_CSV;
     public static final String LOAD_ID_0 = "00000000-0000-0000-0000-000000000000";
     public static final String LOAD_ID_1 = "00000000-0000-0000-0000-000000000001";
-    public static final String LOAD_ID_2 = "00000000-0000-0000-0000-000000000002";
-    public static final String LOAD_ID_3 = "00000000-0000-0000-0000-000000000003";
+    public static final String BULK_LOAD_PARALLELISM_LOW = "LOW";
+    public static final String BULK_LOAD_PARALLELISM_MEDIUM = "MEDIUM";
+    public static final String BULK_LOAD_PARALLELISM_HIGH = "HIGH";
+    public static final String BULK_LOAD_PARALLELISM_OVERSUBSCRIBE = "OVERSUBSCRIBE";
 
     // Load status constants - completed statuses
     public static final String LOAD_COMPLETED = "LOAD_COMPLETED";
@@ -69,13 +73,13 @@ public class TestDataProvider {
     public static final String LOAD_FAILED_INVALID_REQUEST = "LOAD_FAILED_INVALID_REQUEST";
 
     public static NeptuneBulkLoader createNeptuneBulkLoader(
-            String bucket, String s3Prefix, Region region, String neptuneEndpoint, String iamRoleArn) {
+            String bucket, String s3Prefix, String neptuneEndpoint, String iamRoleArn, String parallelism) {
         try (NeptuneBulkLoader loader = new NeptuneBulkLoader(
             bucket,
             s3Prefix,
-            region,
             neptuneEndpoint,
-            iamRoleArn
+            iamRoleArn,
+            parallelism
         )) {
             return loader;
         }
@@ -85,9 +89,9 @@ public class TestDataProvider {
         try (NeptuneBulkLoader loader = new NeptuneBulkLoader(
             BUCKET,
             S3_PREFIX,
-            REGION_US_EAST_2,
             NEPTUNE_ENDPOINT,
-            IAM_ROLE_ARN
+            IAM_ROLE_ARN,
+            BULK_LOAD_PARALLELISM_MEDIUM
         )) {
             return loader;
         }
@@ -103,9 +107,9 @@ public class TestDataProvider {
         return new NeptuneBulkLoader(
             BUCKET,
             S3_PREFIX,
-            REGION_US_EAST_2,
             NEPTUNE_ENDPOINT,
             IAM_ROLE_ARN,
+            BULK_LOAD_PARALLELISM_MEDIUM,
             httpClient,
             s3AsyncClient
         );

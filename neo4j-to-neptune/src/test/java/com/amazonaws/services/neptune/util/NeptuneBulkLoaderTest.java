@@ -14,7 +14,6 @@ package com.amazonaws.services.neptune.util;
 
 import com.amazonaws.services.neptune.TestDataProvider;
 
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
@@ -74,36 +73,99 @@ public class NeptuneBulkLoaderTest {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader();
 
         // Verify constructor output messages
-        String output = outputStream.toString();
-        assertTrue("Should contain bucket name", output.contains("S3 Bucket: " + TestDataProvider.BUCKET));
-        assertTrue("Should contain S3 prefix", output.contains("S3 Prefix: " + TestDataProvider.S3_PREFIX));
-        assertTrue("Should contain region", output.contains("AWS Region: " + TestDataProvider.REGION_US_EAST_2));
-        assertTrue("Should contain Neptune endpoint", output.contains("Neptune Endpoint: " + TestDataProvider.NEPTUNE_ENDPOINT));
-        assertTrue("Should contain IAM role ARN", output.contains("IAM Role ARN: " + TestDataProvider.IAM_ROLE_ARN));
+        String error = errorStream.toString();
+        assertTrue("Should contain bucket name", error.contains("S3 Bucket: " + TestDataProvider.BUCKET));
+        assertTrue("Should contain S3 prefix", error.contains("S3 Prefix: " + TestDataProvider.S3_PREFIX));
+        assertTrue("Should contain region", error.contains("AWS Region: " + TestDataProvider.REGION_US_EAST_2));
+        assertTrue("Should contain IAM role ARN", error.contains("IAM Role ARN: " + TestDataProvider.IAM_ROLE_ARN));
+        assertTrue("Should contain Neptune endpoint", error.contains("Neptune Endpoint: " + TestDataProvider.NEPTUNE_ENDPOINT));
+        assertTrue("Should contain Neptune bulk load parallelism", error.contains("Bulk Load Parallelism: " + TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM));
         assertNotNull("NeptuneBulkLoader should be created", neptuneBulkLoader);
     }
 
-    @Test(expected = IllegalArgumentException.class)
-    public void testConstructorWithInvalidParameters() {
-        Object[][] invalidParameters = {
-            {"Empty bucket name", "", TestDataProvider.S3_PREFIX, TestDataProvider.REGION_US_EAST_2, TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN},
-            {"Empty S3 prefix", TestDataProvider.BUCKET, "", TestDataProvider.REGION_US_EAST_2, TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN},
-            {"Empty Neptune endpoint", TestDataProvider.BUCKET, TestDataProvider.S3_PREFIX, TestDataProvider.REGION_US_EAST_2, "", TestDataProvider.IAM_ROLE_ARN},
-            {"Empty IAM role ARN", TestDataProvider.BUCKET, TestDataProvider.S3_PREFIX, TestDataProvider.REGION_US_EAST_2, TestDataProvider.NEPTUNE_ENDPOINT, ""},
-            {"Whitespace bucket name", " ", TestDataProvider.S3_PREFIX, TestDataProvider.REGION_US_EAST_2, TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN},
-            {"Whitespace S3 prefix", TestDataProvider.BUCKET, " ", TestDataProvider.REGION_US_EAST_2, TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN}
+    @Test
+    public void testConstructorWithValidParallelismParameters() {
+        // Test each valid parallelism value
+        String[] validParallelismValues = {
+            TestDataProvider.BULK_LOAD_PARALLELISM_LOW, TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM,
+            TestDataProvider.BULK_LOAD_PARALLELISM_HIGH, TestDataProvider.BULK_LOAD_PARALLELISM_OVERSUBSCRIBE
         };
 
-        for (Object[] params : invalidParameters) {
-            NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(
-                (String) params[1], (String) params[2], (Region) params[3],
-                (String) params[4], (String) params[5]);
-            assertNull("NeptuneBulkLoader should fail creation with " + params[0], neptuneBulkLoader);
+        for (String parallelism : validParallelismValues) {
+            // Create NeptuneBulkLoader with each parallelism value
+            NeptuneBulkLoader loader = TestDataProvider.createNeptuneBulkLoader(
+                TestDataProvider.BUCKET,
+                TestDataProvider.S3_PREFIX,
+                TestDataProvider.NEPTUNE_ENDPOINT,
+                TestDataProvider.IAM_ROLE_ARN,
+                parallelism
+            );
+
+            // Verify it was created successfully (not null)
+            assertNotNull("NeptuneBulkLoader should be created with parallelism: " + parallelism, loader);
+
+            // Verify the parallelism value is logged
+            String error = errorStream.toString();
+            assertTrue("Should contain parallelism value: " + parallelism,
+                error.contains("Bulk Load Parallelism: " + parallelism));
+
+            // Clear error stream for next iteration
+            errorStream.reset();
         }
     }
 
     @Test
-    public void testUploadFileAsyncS3Success() throws Exception {
+    public void testConstructorWithInvalidParameters() {
+        Object[][] invalidParameters = {
+            {"Empty bucket name", "", TestDataProvider.S3_PREFIX, TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN, TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM},
+            {"Empty S3 prefix", TestDataProvider.BUCKET, "", TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN, TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM},
+            {"Empty Neptune endpoint", TestDataProvider.BUCKET, TestDataProvider.S3_PREFIX, "", TestDataProvider.IAM_ROLE_ARN, TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM},
+            {"Empty IAM role ARN", TestDataProvider.BUCKET, TestDataProvider.S3_PREFIX, TestDataProvider.NEPTUNE_ENDPOINT, "", TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM},
+            {"Empty parallelism", TestDataProvider.BUCKET, TestDataProvider.S3_PREFIX, TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN, ""},
+            {"Whitespace bucket name", " ", TestDataProvider.S3_PREFIX, TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN, TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM},
+            {"Whitespace S3 prefix", TestDataProvider.BUCKET, " ", TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN, TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM}
+        };
+
+        for (Object[] params : invalidParameters) {
+            String testCase = (String) params[0];
+            try {
+                TestDataProvider.createNeptuneBulkLoader(
+                    (String) params[1], (String) params[2], (String) params[3],
+                    (String) params[4], (String) params[5]);
+                fail("Should throw IllegalArgumentException for: " + testCase);
+            } catch (IllegalArgumentException e) {
+                // Validate the exception message contains relevant information
+                assertNotNull("Exception message should not be null for: " + testCase, e.getMessage());
+                assertTrue("Exception message should not be empty for: " + testCase,
+                    !e.getMessage().trim().isEmpty());
+
+                // Validate that the exception message is descriptive
+                String message = e.getMessage().toLowerCase();
+                if (testCase.contains("bucket")) {
+                    assertTrue("Exception should mention bucket for: " + testCase,
+                        message.contains("bucket"));
+                } else if (testCase.contains("s3")) {
+                    assertTrue("Exception should mention S3 or prefix for: " + testCase,
+                        message.contains("s3") || message.contains("prefix"));
+                } else if (testCase.contains("neptune")) {
+                    assertTrue("Exception should mention Neptune or endpoint for: " + testCase,
+                        message.contains("neptune") || message.contains("endpoint"));
+                } else if (testCase.contains("iam")) {
+                    assertTrue("Exception should mention IAM or role for: " + testCase,
+                        message.contains("iam") || message.contains("role"));
+                } else if (testCase.contains("parallelism")) {
+                    assertTrue("Exception should mention parallelism for: " + testCase,
+                        message.contains("parallelism"));
+                }
+            } catch (Exception e) {
+                fail("Should throw IllegalArgumentException, but got " + e.getClass().getSimpleName() +
+                     " for: " + testCase + ". Message: " + e.getMessage());
+            }
+        }
+    }
+
+    @Test
+    public void testUploadSingleFileAsyncS3Success() throws Exception {
         File testDir = tempFolder.newFolder(TestDataProvider.TEMP_FOLDER_NAME);
         File testVerticiesFile = new File(testDir, TestDataProvider.VERTICIES_CSV);
         TestDataProvider.createMockVerticesFile(testDir, testVerticiesFile);
@@ -128,13 +190,13 @@ public class NeptuneBulkLoaderTest {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
 
         try {
-            CompletableFuture<Boolean> result = neptuneBulkLoader.uploadFileAsync(
+            CompletableFuture<Boolean> result = neptuneBulkLoader.uploadSingleFileAsync(
                 testVerticiesFile.getAbsolutePath(),
                 TestDataProvider.S3_KEY_FOR_UPLOAD_FILE_ASYNC_VERTICES
             );
 
             // The method should return a CompletableFuture
-            assertNotNull("uploadFileAsync should return a CompletableFuture", result);
+            assertNotNull("uploadSingleFileAsync should return a CompletableFuture", result);
 
             // Wait for the result and verify it's true
             Boolean uploadResult = result.get();
@@ -144,9 +206,9 @@ public class NeptuneBulkLoaderTest {
             verify(mockS3AsyncClient, times(1)).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
 
             // Verify the output contains success message
-            String output = outputStream.toString();
+            String error = errorStream.toString();
             assertTrue("Should contain upload attempt message",
-                output.contains("Starting async upload"));
+                error.contains("Starting async upload"));
 
         } catch (Exception e) {
             fail("Should not throw exception when S3AsyncClient is mocked successfully: " + e.getMessage());
@@ -154,12 +216,11 @@ public class NeptuneBulkLoaderTest {
     }
 
     @Test
-    public void testUploadFileAsyncS3Exception() throws Exception {
+    public void testUploadSingleFileAsyncS3Exception() throws Exception {
         File testDir = tempFolder.newFolder(TestDataProvider.TEMP_FOLDER_NAME);
         File testVerticiesFile = new File(testDir, TestDataProvider.VERTICIES_CSV);
         TestDataProvider.createMockVerticesFile(testDir, testVerticiesFile);
 
-        String testS3Key = TestDataProvider.S3_KEY_FOR_UPLOAD_FILE_ASYNC_VERTICES;
 
         // Mock S3Exception to be thrown
         S3Exception s3Exception = (S3Exception) S3Exception.builder()
@@ -183,9 +244,9 @@ public class NeptuneBulkLoaderTest {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
 
         try {
-            CompletableFuture<Boolean> result = neptuneBulkLoader.uploadFileAsync(
+            CompletableFuture<Boolean> result = neptuneBulkLoader.uploadSingleFileAsync(
                 testVerticiesFile.getAbsolutePath(),
-                testS3Key
+                TestDataProvider.S3_KEY_FOR_UPLOAD_FILE_ASYNC_VERTICES
             );
 
             // Wait for the future to complete and expect it to return false due to exception
@@ -195,13 +256,11 @@ public class NeptuneBulkLoaderTest {
             // Verify that the S3AsyncClient.putObject was called
             verify(mockS3AsyncClient, times(1)).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
 
-            // Verify the output contains upload attempt message
-            String output = outputStream.toString();
-            assertTrue("Should contain upload attempt message",
-                output.contains("Starting async upload"));
 
             // Verify error stream contains the exception details
             String error = errorStream.toString();
+            assertTrue("Should contain upload attempt message",
+                error.contains("Starting async upload"));
             assertTrue("Should contain error message about upload failure",
                 error.contains("Error uploading file") || error.contains("Access Denied"));
 
@@ -221,19 +280,19 @@ public class NeptuneBulkLoaderTest {
     }
 
     @Test(expected = IllegalStateException.class)
-    public void testUploadFileAsyncWithNonExistentDirectory() throws Exception {
+    public void testUploadSingleFileAsyncWithNonExistentDirectory() throws Exception {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader();
 
-        neptuneBulkLoader.uploadFileAsync("/non/existent/file.csv", TestDataProvider.S3_KEY);
+        neptuneBulkLoader.uploadSingleFileAsync("/non/existent/file.csv", TestDataProvider.S3_KEY);
     }
 
     @Test(expected = IllegalStateException.class)
-    public void testUploadFileAsyncWithNonExistentFile() throws Exception {
+    public void testUploadSingleFileAsyncWithNonExistentFile() throws Exception {
         File testDir = tempFolder.newFolder(TestDataProvider.TEMP_FOLDER_NAME);
 
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader();
 
-        neptuneBulkLoader.uploadFileAsync(testDir.getAbsolutePath(), TestDataProvider.S3_KEY);
+        neptuneBulkLoader.uploadSingleFileAsync(testDir.getAbsolutePath(), TestDataProvider.S3_KEY);
     }
 
     @Test
@@ -243,36 +302,36 @@ public class NeptuneBulkLoaderTest {
 
         NeptuneBulkLoader spyLoader = spy(TestDataProvider.createNeptuneBulkLoader());
 
-        // Mock both uploadFileAsync calls to return successful futures
+        // Mock both uploadSingleFileAsync calls to return successful futures
         CompletableFuture<Boolean> successFuture = CompletableFuture.completedFuture(true);
-        doReturn(successFuture).when(spyLoader).uploadFileAsync(anyString(), anyString());
+        doReturn(successFuture).when(spyLoader).uploadSingleFileAsync(anyString(), anyString());
 
         // Test upload
         spyLoader.uploadCsvFilesToS3(testDir.getAbsolutePath());
 
         // Verify both files were uploaded (vertices.csv and edges.csv)
-        verify(spyLoader, times(2)).uploadFileAsync(anyString(), anyString());
+        verify(spyLoader, times(2)).uploadSingleFileAsync(anyString(), anyString());
 
         // Verify specific file paths were called
-        verify(spyLoader).uploadFileAsync(
+        verify(spyLoader).uploadSingleFileAsync(
             eq(testDir.getAbsolutePath() + File.separator + TestDataProvider.VERTICIES_CSV),
             contains(TestDataProvider.VERTICIES_CSV)
         );
-        verify(spyLoader).uploadFileAsync(
+        verify(spyLoader).uploadSingleFileAsync(
             eq(testDir.getAbsolutePath() + File.separator + TestDataProvider.EDGES_CSV),
             contains(TestDataProvider.EDGES_CSV)
         );
 
         // Verify output messages
-        String output = outputStream.toString();
+        String error = errorStream.toString();
         assertTrue("Should contain initial upload message",
-            output.contains("Uploading Gremlin CSV to S3..."));
+            error.contains("Uploading Gremlin load data to S3..."));
         assertTrue("Should contain success message",
-            output.contains("CSV files uploaded successfully to S3. Files available at"));
+            error.contains("Files uploaded successfully to S3. Files available at"));
         assertTrue("Should contain S3 bucket name",
-            output.contains(TestDataProvider.BUCKET));
+            error.contains(TestDataProvider.BUCKET));
         assertTrue("Should contain timestamp",
-            output.contains(testDir.getName()));
+            error.contains(testDir.getName()));
     }
 
     @Test(expected = RuntimeException.class)
@@ -286,11 +345,11 @@ public class NeptuneBulkLoaderTest {
         CompletableFuture<Boolean> failureFuture = CompletableFuture.completedFuture(false);
         CompletableFuture<Boolean> successFuture = CompletableFuture.completedFuture(true);
 
-        doReturn(failureFuture).when(spyLoader).uploadFileAsync(
+        doReturn(failureFuture).when(spyLoader).uploadSingleFileAsync(
             eq(testDir.getAbsolutePath() + File.separator + TestDataProvider.VERTICIES_CSV),
             anyString()
         );
-        doReturn(successFuture).when(spyLoader).uploadFileAsync(
+        doReturn(successFuture).when(spyLoader).uploadSingleFileAsync(
             eq(testDir.getAbsolutePath() + File.separator + TestDataProvider.EDGES_CSV),
             anyString()
         );
@@ -313,11 +372,11 @@ public class NeptuneBulkLoaderTest {
         CompletableFuture<Boolean> successFuture = CompletableFuture.completedFuture(true);
         CompletableFuture<Boolean> failureFuture = CompletableFuture.completedFuture(false);
 
-        doReturn(successFuture).when(spyLoader).uploadFileAsync(
+        doReturn(successFuture).when(spyLoader).uploadSingleFileAsync(
             eq(testDir.getAbsolutePath() + File.separator + TestDataProvider.VERTICIES_CSV),
             anyString()
         );
-        doReturn(failureFuture).when(spyLoader).uploadFileAsync(
+        doReturn(failureFuture).when(spyLoader).uploadSingleFileAsync(
             eq(testDir.getAbsolutePath() + File.separator + TestDataProvider.EDGES_CSV),
             anyString()
         );
@@ -338,7 +397,7 @@ public class NeptuneBulkLoaderTest {
 
         // Mock both uploads to fail
         CompletableFuture<Boolean> failureFuture = CompletableFuture.completedFuture(false);
-        doReturn(failureFuture).when(spyLoader).uploadFileAsync(anyString(), anyString());
+        doReturn(failureFuture).when(spyLoader).uploadSingleFileAsync(anyString(), anyString());
 
         // Test upload - should throw RuntimeException
         spyLoader.uploadCsvFilesToS3(testDir.getAbsolutePath());
@@ -354,10 +413,10 @@ public class NeptuneBulkLoaderTest {
 
         NeptuneBulkLoader spyLoader = spy(TestDataProvider.createNeptuneBulkLoader());
 
-        // Mock uploadFileAsync to throw an exception
+        // Mock uploadSingleFileAsync to throw an exception
         CompletableFuture<Boolean> exceptionFuture = new CompletableFuture<>();
         exceptionFuture.completeExceptionally(new RuntimeException("S3 connection failed"));
-        doReturn(exceptionFuture).when(spyLoader).uploadFileAsync(anyString(), anyString());
+        doReturn(exceptionFuture).when(spyLoader).uploadSingleFileAsync(anyString(), anyString());
 
         try {
             spyLoader.uploadCsvFilesToS3(testDir.getAbsolutePath());
@@ -371,30 +430,30 @@ public class NeptuneBulkLoaderTest {
     }
 
     @Test
-    public void testUploadCsvFilesToS3S3KeyConstruction() throws Exception {
+    public void testUploadCsvFilesToS3S3PrefixConstruction() throws Exception {
         File testDir = tempFolder.newFolder(TestDataProvider.TEMP_FOLDER_NAME);
         TestDataProvider.createMockCsvFiles(testDir);
 
         NeptuneBulkLoader spyLoader = spy(TestDataProvider.createNeptuneBulkLoader());
 
         CompletableFuture<Boolean> successFuture = CompletableFuture.completedFuture(true);
-        doReturn(successFuture).when(spyLoader).uploadFileAsync(anyString(), anyString());
+        doReturn(successFuture).when(spyLoader).uploadSingleFileAsync(anyString(), anyString());
 
         // Test upload
         spyLoader.uploadCsvFilesToS3(testDir.getAbsolutePath());
 
         // Extract timestamp from directory name
         String expectedTimestamp = testDir.getName();
-        String expectedS3KeyPrefix = TestDataProvider.S3_PREFIX + File.separator + expectedTimestamp;
+        String expectedS3Prefix = TestDataProvider.S3_PREFIX + File.separator + expectedTimestamp;
 
-        // Verify S3 keys are constructed correctly
-        verify(spyLoader).uploadFileAsync(
+        // Verify S3 prefixes are constructed correctly
+        verify(spyLoader).uploadSingleFileAsync(
             anyString(),
-            eq(expectedS3KeyPrefix + "/" + TestDataProvider.VERTICIES_CSV)
+            eq(expectedS3Prefix + "/" + TestDataProvider.VERTICIES_CSV)
         );
-        verify(spyLoader).uploadFileAsync(
+        verify(spyLoader).uploadSingleFileAsync(
             anyString(),
-            eq(expectedS3KeyPrefix + "/" + TestDataProvider.EDGES_CSV)
+            eq(expectedS3Prefix + "/" + TestDataProvider.EDGES_CSV)
         );
     }
 
@@ -405,16 +464,9 @@ public class NeptuneBulkLoaderTest {
 
         NeptuneBulkLoader spyLoader = spy(TestDataProvider.createNeptuneBulkLoader());
 
-        // Mock vertices to fail, edges to succeed
+        // Mock uploadFileAsync to return failure (directory-based approach)
         CompletableFuture<Boolean> failureFuture = CompletableFuture.completedFuture(false);
-        CompletableFuture<Boolean> successFuture = CompletableFuture.completedFuture(true);
-
-        doReturn(failureFuture).when(spyLoader).uploadFileAsync(
-            contains(TestDataProvider.VERTICIES_CSV), anyString()
-        );
-        doReturn(successFuture).when(spyLoader).uploadFileAsync(
-            contains(TestDataProvider.EDGES_CSV), anyString()
-        );
+        doReturn(failureFuture).when(spyLoader).uploadFileAsync(anyString(), anyString());
 
         try {
             spyLoader.uploadCsvFilesToS3(testDir.getAbsolutePath());
@@ -423,7 +475,7 @@ public class NeptuneBulkLoaderTest {
             // Verify error messages
             String error = errorStream.toString();
             assertTrue("Should contain upload failure message",
-                error.contains("Upload failures - Vertices: false, Edges: true"));
+                error.contains("CSV file uploads failed from directory"));
 
             assertTrue("Should contain runtime exception message",
                 e.getMessage().contains("One or more CSV uploads failed"));
@@ -452,11 +504,11 @@ public class NeptuneBulkLoaderTest {
         assertTrue("Neptune connectivity should return true for healthy status", result);
 
         // Verify output messages
-        String output = outputStream.toString();
+        String error = errorStream.toString();
         assertTrue("Should contain connectivity test message",
-            output.contains("Testing connectivity to Neptune endpoint..."));
+            error.contains("Testing connectivity to Neptune endpoint..."));
         assertTrue("Should contain success message",
-            output.contains("Successful connected to Neptune. Status: 200 healthy"));
+            error.contains("Successful connected to Neptune. Status: 200 healthy"));
     }
 
     @Test
@@ -806,11 +858,11 @@ public class NeptuneBulkLoaderTest {
         neptuneBulkLoader.monitorLoadProgress(TestDataProvider.LOAD_ID_0);
 
         // Verify output messages
-        String output = outputStream.toString();
+        String error = errorStream.toString();
         assertTrue("Should contain monitoring start message",
-            output.contains("Monitoring load progress for job: " + TestDataProvider.LOAD_ID_0));
+            error.contains("Monitoring load progress for job: " + TestDataProvider.LOAD_ID_0));
         assertTrue("Should contain completion message",
-            output.contains("Neptune bulk load completed with status: " + TestDataProvider.LOAD_COMPLETED));
+            error.contains("Neptune bulk load completed with status: " + TestDataProvider.LOAD_COMPLETED));
 
         // Verify HTTP call was made
         verify(mockHttpClient, atLeastOnce()).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
@@ -836,12 +888,9 @@ public class NeptuneBulkLoaderTest {
         neptuneBulkLoader.monitorLoadProgress(TestDataProvider.LOAD_ID_0);
 
         // Verify output messages
-        String output = outputStream.toString();
-        assertTrue("Should contain monitoring start message",
-            output.contains("Monitoring load progress for job: " + TestDataProvider.LOAD_ID_0));
-
-        // Verify error messages
         String error = errorStream.toString();
+        assertTrue("Should contain monitoring start message",
+            error.contains("Monitoring load progress for job: " + TestDataProvider.LOAD_ID_0));
         assertTrue("Should contain failure message",
             error.contains("Neptune bulk load failed with status: " + TestDataProvider.LOAD_FAILED));
         assertTrue("Should contain full response",
@@ -876,13 +925,13 @@ public class NeptuneBulkLoaderTest {
         neptuneBulkLoader.monitorLoadProgress(TestDataProvider.LOAD_ID_0);
 
         // Verify output messages
-        String output = outputStream.toString();
+        String error = errorStream.toString();
         assertTrue("Should contain monitoring start message",
-            output.contains("Monitoring load progress for job: " + TestDataProvider.LOAD_ID_0));
+            error.contains("Monitoring load progress for job: " + TestDataProvider.LOAD_ID_0));
         assertTrue("Should contain in-progress messages",
-            output.contains("Neptune bulk load status: " + TestDataProvider.LOAD_IN_PROGRESS));
+            error.contains("Neptune bulk load status: " + TestDataProvider.LOAD_IN_PROGRESS));
         assertTrue("Should contain completion message",
-            output.contains("Neptune bulk load completed with status: " + TestDataProvider.LOAD_COMPLETED));
+            error.contains("Neptune bulk load completed with status: " + TestDataProvider.LOAD_COMPLETED));
 
         // Verify HTTP calls were made multiple times
         verify(mockHttpClient, times(3)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
@@ -908,11 +957,11 @@ public class NeptuneBulkLoaderTest {
         neptuneBulkLoader.monitorLoadProgress(TestDataProvider.LOAD_ID_0);
 
         // Verify output messages
-        String output = outputStream.toString();
+        String error = errorStream.toString();
         assertTrue("Should contain monitoring start message",
-            output.contains("Monitoring load progress for job: " + TestDataProvider.LOAD_ID_0));
+            error.contains("Monitoring load progress for job: " + TestDataProvider.LOAD_ID_0));
         assertTrue("Should contain completion message",
-            output.contains("Neptune bulk load completed with status: " + TestDataProvider.LOAD_COMPLETED));
+            error.contains("Neptune bulk load completed with status: " + TestDataProvider.LOAD_COMPLETED));
 
         // Verify HTTP call was made
         verify(mockHttpClient, atLeastOnce()).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
@@ -940,7 +989,7 @@ public class NeptuneBulkLoaderTest {
         // Override the monitorLoadProgress method to use a smaller maxAttempts for testing
         doAnswer(invocation -> {
             String loadId = invocation.getArgument(0);
-            System.out.println("Monitoring load progress for job: " + loadId);
+            System.err.println("Monitoring load progress for job: " + loadId);
             try {
                 int sleepTimeMs = 10; // Reduced sleep time for testing
                 int maxAttempts = 3;  // Reduced max attempts for testing
@@ -950,7 +999,7 @@ public class NeptuneBulkLoaderTest {
                     String statusResponse = spyLoader.checkNeptuneBulkLoadStatus(loadId);
 
                     if (statusResponse != null) {
-                        System.out.println("Neptune bulk load status: " + TestDataProvider.LOAD_IN_PROGRESS);
+                        System.err.println("Neptune bulk load status: " + TestDataProvider.LOAD_IN_PROGRESS);
                     }
 
                     Thread.sleep(sleepTimeMs);
@@ -969,15 +1018,12 @@ public class NeptuneBulkLoaderTest {
 
         spyLoader.monitorLoadProgress(TestDataProvider.LOAD_ID_0);
 
-        // Verify output messages
-        String output = outputStream.toString();
-        assertTrue("Should contain monitoring start message",
-            output.contains("Monitoring load progress for job: " + TestDataProvider.LOAD_ID_0));
-        assertTrue("Should contain in-progress status messages",
-            output.contains("Neptune bulk load status: " + TestDataProvider.LOAD_IN_PROGRESS));
-
         // Verify timeout error message
         String error = errorStream.toString();
+        assertTrue("Should contain monitoring start message",
+            error.contains("Monitoring load progress for job: " + TestDataProvider.LOAD_ID_0));
+        assertTrue("Should contain in-progress status messages",
+            error.contains("Neptune bulk load status: " + TestDataProvider.LOAD_IN_PROGRESS));
         assertTrue("Should contain timeout message",
             error.contains("Monitoring timeouted at") && error.contains("Check load status manually"));
 
@@ -1001,9 +1047,9 @@ public class NeptuneBulkLoaderTest {
         neptuneBulkLoader.monitorLoadProgress(TestDataProvider.LOAD_ID_0);
 
         // Verify output messages
-        String output = outputStream.toString();
+        String error = errorStream.toString();
         assertTrue("Should contain monitoring start message",
-            output.contains("Monitoring load progress for job: " + TestDataProvider.LOAD_ID_0));
+            error.contains("Monitoring load progress for job: " + TestDataProvider.LOAD_ID_0));
     }
 
     @Test
@@ -1040,8 +1086,7 @@ public class NeptuneBulkLoaderTest {
             // Create NeptuneBulkLoader with mock clients
             NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
 
-            // Clear streams for each test iteration
-            outputStream.reset();
+            // Clear stream for each test iteration
             errorStream.reset();
 
             // Monitor load progress with timeout protection
@@ -1087,17 +1132,16 @@ public class NeptuneBulkLoaderTest {
             // Create NeptuneBulkLoader with mock clients
             NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
 
-            // Clear streams for each test
-            outputStream.reset();
+            // Clear stream for each test
             errorStream.reset();
 
             // Monitor load progress
             neptuneBulkLoader.monitorLoadProgress(TestDataProvider.LOAD_ID_0);
 
             // Verify output messages
-            String output = outputStream.toString();
+            String error = errorStream.toString();
             assertTrue("Should contain completion message for " + completedStatus,
-                output.contains("Neptune bulk load completed with status: " + completedStatus));
+                error.contains("Neptune bulk load completed with status: " + completedStatus));
 
             // Verify HTTP call was made
             verify(mockHttpClient, times(1)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
@@ -1148,20 +1192,19 @@ public class NeptuneBulkLoaderTest {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
 
         // Start bulk load
-        String testS3Uri = "s3://" + TestDataProvider.BUCKET + "/" + TestDataProvider.S3_PREFIX + "/";
-        String result = neptuneBulkLoader.startNeptuneBulkLoad(testS3Uri);
+        String result = neptuneBulkLoader.startNeptuneBulkLoad(TestDataProvider.CONVERT_CSV_TIMESTAMP);
 
         // Verify the result
         assertEquals("Should return the load ID", TestDataProvider.LOAD_ID_0, result);
 
         // Verify output messages
-        String output = outputStream.toString();
+        String error = errorStream.toString();
         assertTrue("Should contain starting message",
-            output.contains("Starting Neptune bulk load..."));
+            error.contains("Starting Neptune bulk load..."));
         assertTrue("Should contain connectivity test message",
-            output.contains("Testing connectivity to Neptune endpoint..."));
+            error.contains("Testing connectivity to Neptune endpoint..."));
         assertTrue("Should contain success message",
-            output.contains("Neptune bulk load started with ID: " + TestDataProvider.LOAD_ID_0));
+            error.contains("Neptune bulk load started successfully! Load ID: " + TestDataProvider.LOAD_ID_0));
 
         // Verify HTTP calls were made (connectivity + bulk load start)
         verify(mockHttpClient, times(2)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
@@ -1183,11 +1226,8 @@ public class NeptuneBulkLoaderTest {
         // Create NeptuneBulkLoader with mock clients
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
 
-        // Start bulk load - should throw exception due to connectivity failure
-        String testS3Uri = "s3://" + TestDataProvider.BUCKET + "/" + TestDataProvider.S3_PREFIX + "/";
-
         try {
-            neptuneBulkLoader.startNeptuneBulkLoad(testS3Uri);
+            neptuneBulkLoader.startNeptuneBulkLoad(TestDataProvider.CONVERT_CSV_TIMESTAMP);
             fail("Should throw RuntimeException when connectivity test fails");
         } catch (RuntimeException e) {
             assertTrue("Should contain Neptune endpoint error message",
@@ -1195,9 +1235,9 @@ public class NeptuneBulkLoaderTest {
         }
 
         // Verify output messages
-        String output = outputStream.toString();
+        String error = errorStream.toString();
         assertTrue("Should contain starting message",
-            output.contains("Starting Neptune bulk load..."));
+            error.contains("Starting Neptune bulk load..."));
 
         // Verify only connectivity test was attempted (not bulk load start)
         verify(mockHttpClient, times(1)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
@@ -1215,27 +1255,58 @@ public class NeptuneBulkLoaderTest {
 
         when(mockResponse.statusCode())
             .thenReturn(200)  // First call - connectivity test (success)
-            .thenReturn(400); // Second call - bulk load start (failure)
+            .thenReturn(400)  // Second call - bulk load start (HTTP error)
+            .thenReturn(400)  // Third call - bulk load retry (HTTP error)
+            .thenReturn(400)  // Fourth call - bulk load retry (HTTP error)
+            .thenReturn(400); // Fifth call - bulk load retry (HTTP error)
         when(mockResponse.body())
-            .thenReturn(connectivityResponse)  // First call
-            .thenReturn("Bad Request");        // Second call
+            .thenReturn(connectivityResponse)  // First call - connectivity
+            .thenReturn("Bad Request")         // Second call - bulk load attempt 1
+            .thenReturn("Bad Request")         // Third call - bulk load attempt 2
+            .thenReturn("Bad Request")         // Fourth call - bulk load attempt 3
+            .thenReturn("Bad Request");        // Fifth call - bulk load attempt 4
         when(mockHttpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
 
-        // Start bulk load - should return null due to HTTP error
-        String testS3Uri = "s3://" + TestDataProvider.BUCKET + "/" + TestDataProvider.S3_PREFIX + "/";
-        String result = neptuneBulkLoader.startNeptuneBulkLoad(testS3Uri);
+        // Start bulk load - should throw RuntimeException due to HTTP errors after retries
+        try {
+            neptuneBulkLoader.startNeptuneBulkLoad(TestDataProvider.CONVERT_CSV_TIMESTAMP);
+            fail("Should throw RuntimeException due to HTTP errors");
+        } catch (RuntimeException e) {
+            // Validate the RuntimeException message
+            assertTrue("Exception should mention failed attempts",
+                e.getMessage().contains("Failed to start Neptune bulk load after"));
+            assertTrue("Exception should mention number of attempts",
+                e.getMessage().contains("4 attempts"));
 
-        // Verify the result is null
-        assertNull("Should return null when bulk load start fails", result);
+            // Validate error stream messages
+            String error = errorStream.toString();
 
-        // Verify error messages
-        String error = errorStream.toString();
-        assertTrue("Should contain error message",
-            error.contains("An error occurred while converting Neo4j CSV file"));
+            // Check for starting message
+            assertTrue("Should contain starting message",
+                error.contains("Starting Neptune bulk load"));
+
+            // Check for connectivity test message
+            assertTrue("Should contain connectivity test message",
+                error.contains("Testing connectivity to Neptune endpoint"));
+
+            // Check for retry attempt messages (HTTP errors will fail on each attempt)
+            assertTrue("Should contain retry attempt 1 message",
+                error.contains("Attempt 1 failed"));
+            assertTrue("Should contain retry attempt 2 message",
+                error.contains("Attempt 2 failed"));
+            assertTrue("Should contain retry attempt 3 message",
+                error.contains("Attempt 3 failed"));
+
+            // Check that error messages contain HTTP error details
+            assertTrue("Should contain HTTP error details",
+                error.contains("Failed to start Neptune bulk load. Status: 400"));
+            assertTrue("Should contain HTTP error response",
+                error.contains("Bad Request"));
+        }
 
         // Verify HTTP calls were made (connectivity + 4 retry attempts for bulk load)
         verify(mockHttpClient, times(5)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
@@ -1268,21 +1339,17 @@ public class NeptuneBulkLoaderTest {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
 
         // Start bulk load - should succeed after retry
-        String testS3Uri = "s3://" + TestDataProvider.BUCKET + "/" + TestDataProvider.S3_PREFIX + "/";
-        String result = neptuneBulkLoader.startNeptuneBulkLoad(testS3Uri);
+        String result = neptuneBulkLoader.startNeptuneBulkLoad(TestDataProvider.CONVERT_CSV_TIMESTAMP);
 
         // Verify the result
         assertEquals("Should return the load ID after retry", TestDataProvider.LOAD_ID_0, result);
 
         // Verify output messages
-        String output = outputStream.toString();
-        assertTrue("Should contain starting message",
-            output.contains("Starting Neptune bulk load..."));
-        assertTrue("Should contain success message",
-            output.contains("Neptune bulk load started with ID: " + TestDataProvider.LOAD_ID_0));
-
-        // Verify error messages for retry attempt
         String error = errorStream.toString();
+        assertTrue("Should contain starting message",
+            error.contains("Starting Neptune bulk load..."));
+        assertTrue("Should contain success message",
+            error.contains("Neptune bulk load started successfully! Load ID: " + TestDataProvider.LOAD_ID_0));
         assertTrue("Should contain retry attempt message",
             error.contains("Attempt 1 failed"));
 
@@ -1321,23 +1388,19 @@ public class NeptuneBulkLoaderTest {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
 
         // Start bulk load - should succeed after retry
-        String testS3Uri = "s3://" + TestDataProvider.BUCKET + "/" + TestDataProvider.S3_PREFIX + "/";
-        String result = neptuneBulkLoader.startNeptuneBulkLoad(testS3Uri);
+        String result = neptuneBulkLoader.startNeptuneBulkLoad(TestDataProvider.CONVERT_CSV_TIMESTAMP);
 
         // Verify the result
         assertEquals("Should return the load ID after retry", TestDataProvider.LOAD_ID_0, result);
 
         // Verify output messages
-        String output = outputStream.toString();
-        assertTrue("Should contain starting message",
-            output.contains("Starting Neptune bulk load..."));
-        assertTrue("Should contain success message",
-            output.contains("Neptune bulk load started with ID: " + TestDataProvider.LOAD_ID_0));
-
-        // Verify error messages for retry attempt
         String error = errorStream.toString();
+        assertTrue("Should contain starting message",
+            error.contains("Starting Neptune bulk load..."));
+        assertTrue("Should contain success message",
+            error.contains("Neptune bulk load started successfully! Load ID: " + TestDataProvider.LOAD_ID_0));
         assertTrue("Should contain retry attempt message",
-            error.contains("Attempt 1 failed"));
+            error.contains("Attempt 1 failed: Failed to start Neptune bulk load"));
 
         // Verify HTTP calls were made (connectivity + 2 attempts for bulk load)
         verify(mockHttpClient, times(5)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
@@ -1368,27 +1431,47 @@ public class NeptuneBulkLoaderTest {
         when(mockHttpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
             .thenReturn(mockResponse);
 
-
         // Create NeptuneBulkLoader with mock clients
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
 
-        // Start bulk load - should return null due to HTTP error
-        String testS3Uri = "s3://" + TestDataProvider.BUCKET + "/" + TestDataProvider.S3_PREFIX + "/";
-        String result = neptuneBulkLoader.startNeptuneBulkLoad(testS3Uri);
+        // Start bulk load - should throw RuntimeException after max retries
+        try {
+            neptuneBulkLoader.startNeptuneBulkLoad(TestDataProvider.CONVERT_CSV_TIMESTAMP);
+            fail("Should throw RuntimeException after max retries");
+        } catch (RuntimeException e) {
+            // Validate the RuntimeException message
+            assertTrue("Exception should mention failed attempts",
+                e.getMessage().contains("Failed to start Neptune bulk load after"));
+            assertTrue("Exception should mention number of attempts",
+                e.getMessage().contains("4 attempts"));
 
-        // Verify the result is null
-        assertNull("Should return null when bulk load start fails", result);
+            // Validate all error stream messages
+            String error = errorStream.toString();
 
-        // Verify error messages
-        String error = errorStream.toString();
-        assertTrue("Should contain retry attempt message",
-            error.contains("Attempt 1 failed"));
-        assertTrue("Should contain retry attempt message",
-            error.contains("Attempt 2 failed"));
-        assertTrue("Should contain retry attempt message",
-            error.contains("Attempt 3 failed"));
-        assertTrue("Should contain error message",
-            error.contains("An error occurred while converting Neo4j CSV file: Failed to start Neptune bulk load"));
+            // Check for starting message
+            assertTrue("Should contain starting message",
+                error.contains("Starting Neptune bulk load"));
+
+            // Check for connectivity test message
+            assertTrue("Should contain connectivity test message",
+                error.contains("Testing connectivity to Neptune endpoint"));
+
+            // Check for all retry attempt messages
+            assertTrue("Should contain retry attempt 1 message",
+                error.contains("Attempt 1 failed"));
+            assertTrue("Should contain retry attempt 2 message",
+                error.contains("Attempt 2 failed"));
+            assertTrue("Should contain retry attempt 3 message",
+                error.contains("Attempt 3 failed"));
+            assertTrue("Should contain retry attempt 4 message",
+                error.contains("Failed to start Neptune bulk load after 4 attempts."));
+
+            // Check for specific error details in retry messages
+            assertTrue("Should contain HTTP error details",
+                error.contains("Failed to start Neptune bulk load. Status: 500"));
+            assertTrue("Should contain server error response",
+                error.contains("Internal Server Error"));
+        }
 
         // Verify HTTP calls were made (connectivity + 4 retry attempts for bulk load)
         verify(mockHttpClient, times(5)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
@@ -1403,34 +1486,252 @@ public class NeptuneBulkLoaderTest {
 
         // Mock connectivity test response (successful)
         String connectivityResponse = "{\"status\":\"healthy\"}";
-        // Mock invalid JSON response
+        // Mock invalid JSON response for bulk load attempts
         String invalidJsonResponse = "invalid json response";
 
         when(mockResponse.statusCode())
             .thenReturn(200)  // First call - connectivity test (success)
-            .thenReturn(200); // Second call - bulk load start (success but invalid JSON)
+            .thenReturn(200)  // Second call - bulk load start (success but invalid JSON)
+            .thenReturn(200)  // Third call - bulk load retry (success but invalid JSON)
+            .thenReturn(200)  // Fourth call - bulk load retry (success but invalid JSON)
+            .thenReturn(200); // Fifth call - bulk load retry (success but invalid JSON)
         when(mockResponse.body())
-            .thenReturn(connectivityResponse)  // First call
-            .thenReturn(invalidJsonResponse);  // Second call
+            .thenReturn(connectivityResponse)  // First call - connectivity
+            .thenReturn(invalidJsonResponse)   // Second call - bulk load attempt 1
+            .thenReturn(invalidJsonResponse)   // Third call - bulk load attempt 2
+            .thenReturn(invalidJsonResponse)   // Fourth call - bulk load attempt 3
+            .thenReturn(invalidJsonResponse);  // Fifth call - bulk load attempt 4
         when(mockHttpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
 
-        // Start bulk load - should return null due to JSON parsing error
-        String testS3Uri = "s3://" + TestDataProvider.BUCKET + "/" + TestDataProvider.S3_PREFIX + "/";
-        String result = neptuneBulkLoader.startNeptuneBulkLoad(testS3Uri);
+        // Start bulk load - should throw RuntimeException due to JSON parsing errors after retries
+        try {
+            neptuneBulkLoader.startNeptuneBulkLoad(TestDataProvider.CONVERT_CSV_TIMESTAMP);
+            fail("Should throw RuntimeException due to JSON parsing failures");
+        } catch (RuntimeException e) {
+            // Validate the RuntimeException message
+            assertTrue("Exception should mention failed attempts",
+                e.getMessage().contains("Failed to start Neptune bulk load after"));
+            assertTrue("Exception should mention number of attempts",
+                e.getMessage().contains("4 attempts"));
 
-        // Verify the result is null
-        assertNull("Should return null when JSON parsing fails", result);
+            // Validate error stream messages
+            String error = errorStream.toString();
 
-        // Verify error messages
-        String error = errorStream.toString();
-        assertTrue("Should contain error message",
-            error.contains("An error occurred while converting Neo4j CSV file"));
+            // Check for starting message
+            assertTrue("Should contain starting message",
+                error.contains("Starting Neptune bulk load"));
+
+            // Check for connectivity test message
+            assertTrue("Should contain connectivity test message",
+                error.contains("Testing connectivity to Neptune endpoint"));
+
+            // Check for retry attempt messages (JSON parsing will fail on each attempt)
+            assertTrue("Should contain retry attempt 1 message",
+                error.contains("Attempt 1 failed"));
+            assertTrue("Should contain retry attempt 2 message",
+                error.contains("Attempt 2 failed"));
+            assertTrue("Should contain retry attempt 3 message",
+                error.contains("Attempt 3 failed"));
+
+            // Check that error messages contain JSON parsing related errors
+            assertTrue("Should contain JSON parsing error details",
+                error.contains(invalidJsonResponse));
+        }
 
         // Verify HTTP calls were made (connectivity + 4 retry attempts for bulk load)
         verify(mockHttpClient, times(5)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
     }
+
+    @Test
+    public void testUploadFileAsyncDirectorySuccess() throws Exception {
+        File testDir = tempFolder.newFolder(TestDataProvider.TEMP_FOLDER_NAME);
+        TestDataProvider.createMockCsvFiles(testDir);
+
+        // Create a successful PutObjectResponse
+        PutObjectResponse putObjectResponse = PutObjectResponse.builder()
+            .eTag("mock-etag-12345")
+            .build();
+
+        // Create a CompletableFuture that completes successfully
+        CompletableFuture<PutObjectResponse> successFuture = CompletableFuture.completedFuture(putObjectResponse);
+
+        // Mock the S3AsyncClient
+        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        HttpClient mockHttpClient = mock(HttpClient.class);
+
+        // Mock the putObject method to return the successful future
+        when(mockS3AsyncClient.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
+            .thenReturn(successFuture);
+
+        // Create NeptuneBulkLoader with mock clients
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+
+        try {
+            CompletableFuture<Boolean> result = neptuneBulkLoader.uploadFileAsync(
+                testDir.getAbsolutePath(),
+                TestDataProvider.S3_PREFIX + "/test-upload"
+            );
+
+            // The method should return a CompletableFuture
+            assertNotNull("uploadFileAsync should return a CompletableFuture", result);
+
+            // Wait for the result and verify it's true
+            Boolean uploadResult = result.get();
+            assertTrue("Upload should be successful", uploadResult);
+
+            // Verify that the S3AsyncClient.putObject was called for both CSV files
+            verify(mockS3AsyncClient, times(2)).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+
+            // Verify the output contains success message
+            String error = errorStream.toString();
+            assertTrue("Should contain upload attempt message",
+                error.contains("Starting async upload"));
+            assertTrue("Should contain success message",
+                error.contains("Successfully uploaded 2 CSV files"));
+
+        } catch (Exception e) {
+            fail("Should not throw exception when S3AsyncClient is mocked successfully: " + e.getMessage());
+        }
+    }
+
+    @Test
+    public void testUploadFileAsyncDirectoryWithS3Exception() throws Exception {
+        File testDir = tempFolder.newFolder(TestDataProvider.TEMP_FOLDER_NAME);
+        TestDataProvider.createMockCsvFiles(testDir);
+
+        // Mock S3Exception to be thrown
+        S3Exception s3Exception = (S3Exception) S3Exception.builder()
+            .message("Access Denied")
+            .statusCode(403)
+            .build();
+
+        // Create a CompletableFuture that completes exceptionally with S3Exception
+        CompletableFuture<PutObjectResponse> failedFuture = new CompletableFuture<>();
+        failedFuture.completeExceptionally(s3Exception);
+
+        // Mock the S3AsyncClient and HttpClient
+        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        HttpClient mockHttpClient = mock(HttpClient.class);
+
+        // Mock the putObject method to return the failed future
+        when(mockS3AsyncClient.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
+            .thenReturn(failedFuture);
+
+        // Create NeptuneBulkLoader with mock clients
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+
+        try {
+            CompletableFuture<Boolean> result = neptuneBulkLoader.uploadFileAsync(
+                testDir.getAbsolutePath(),
+                TestDataProvider.S3_PREFIX + "/test-upload"
+            );
+
+            // Wait for the future to complete and expect it to return false due to exception
+            Boolean uploadResult = result.get();
+            assertFalse("Upload should fail and return false when S3Exception occurs", uploadResult);
+
+            // Verify that the S3AsyncClient.putObject was called for both files
+            verify(mockS3AsyncClient, times(2)).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+
+            // Verify error stream contains the exception details
+            String error = errorStream.toString();
+            assertTrue("Should contain upload attempt message",
+                error.contains("Starting async upload"));
+            assertTrue("Should contain error message about upload failure",
+                error.contains("S3 error uploading file") || error.contains("Access Denied"));
+
+        } catch (Exception e) {
+            fail("Should not throw exception, should return false instead: " + e.getMessage());
+        }
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void testUploadFileAsyncWithNonExistentDirectory() throws Exception {
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader();
+
+        neptuneBulkLoader.uploadFileAsync("/non/existent/directory", TestDataProvider.S3_KEY);
+    }
+
+    @Test
+    public void testUploadFileAsyncWithEmptyDirectory() throws Exception {
+        File testDir = tempFolder.newFolder(TestDataProvider.TEMP_FOLDER_NAME);
+        // Don't create any CSV files - directory is empty
+
+        // Mock the S3AsyncClient and HttpClient
+        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        HttpClient mockHttpClient = mock(HttpClient.class);
+
+        // Create NeptuneBulkLoader with mock clients
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+
+        CompletableFuture<Boolean> result = neptuneBulkLoader.uploadFileAsync(
+            testDir.getAbsolutePath(),
+            TestDataProvider.S3_KEY
+        );
+
+        // Should return false for empty directory
+        Boolean uploadResult = result.get();
+        assertFalse("Upload should return false for empty directory", uploadResult);
+
+        // Verify error message
+        String error = errorStream.toString();
+        assertTrue("Should contain no CSV files message",
+            error.contains("No CSV files found in directory"));
+
+        // Verify no S3 calls were made
+        verify(mockS3AsyncClient, never()).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+    }
+
+    @Test
+    public void testUploadFileAsyncDirectoryPartialFailure() throws Exception {
+        File testDir = tempFolder.newFolder(TestDataProvider.TEMP_FOLDER_NAME);
+        TestDataProvider.createMockCsvFiles(testDir);
+
+        // Create mixed success/failure responses
+        PutObjectResponse successResponse = PutObjectResponse.builder()
+            .eTag("mock-etag-success")
+            .build();
+        CompletableFuture<PutObjectResponse> successFuture = CompletableFuture.completedFuture(successResponse);
+
+        S3Exception s3Exception = (S3Exception) S3Exception.builder()
+            .message("Access Denied")
+            .statusCode(403)
+            .build();
+        CompletableFuture<PutObjectResponse> failedFuture = new CompletableFuture<>();
+        failedFuture.completeExceptionally(s3Exception);
+
+        // Mock the S3AsyncClient and HttpClient
+        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        HttpClient mockHttpClient = mock(HttpClient.class);
+
+        // Mock first call to succeed, second to fail
+        when(mockS3AsyncClient.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
+            .thenReturn(successFuture)
+            .thenReturn(failedFuture);
+
+        // Create NeptuneBulkLoader with mock clients
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+
+        CompletableFuture<Boolean> result = neptuneBulkLoader.uploadFileAsync(
+            testDir.getAbsolutePath(),
+            TestDataProvider.S3_PREFIX + "/test-upload"
+        );
+
+        // Should return false due to partial failure
+        Boolean uploadResult = result.get();
+        assertFalse("Upload should return false when some files fail", uploadResult);
+
+        // Verify both S3 calls were made
+        verify(mockS3AsyncClient, times(2)).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+
+        // Verify error message
+        String error = errorStream.toString();
+        assertTrue("Should contain partial failure message",
+            error.contains("Some CSV file uploads failed"));
+    }
+
 }
