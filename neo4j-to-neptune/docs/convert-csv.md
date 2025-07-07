@@ -6,6 +6,7 @@
     SYNOPSIS
             neo4j-to-neptune.sh convert-csv [ --bucket-name <bucketName> ]
                     [ --bulk-load ] {-d | --dir} <outputDirectory>
+                    [ --conversion-config <conversionConfigYAMLFile> ]
                     {-i | --input} <inputFile> [ --iam-role-arn <iamRoleArn> ]
                     [ --infer-types ] [ --monitor ]
                     [ --neptune-endpoint <neptuneEndpoint> ]
@@ -32,6 +33,16 @@
                 false)
 
                 This option may occur a maximum of 1 times
+                
+           
+           --conversion-config <conversionConfigYAMLFile>
+                Path to conversion configuration YAML file
+    
+                This option may occur a maximum of 1 times
+    
+    
+                This options value must be a path to a file. The provided path must
+                exist on the file system. The provided path must be readable.
 
 
             -d <outputDirectory>, --dir <outputDirectory>
@@ -52,7 +63,6 @@
 
                 This options value must be a path to a file. The provided path must
                 exist on the file system. The provided path must be readable and
-                writable.
 
 
             --iam-role-arn <iamRoleArn>
@@ -64,7 +74,8 @@
                 This option is required if any of the following options are
                 specified: --bulk-load
 
-
+    
+    
             --infer-types
                 Infer data types for CSV column headings
 
