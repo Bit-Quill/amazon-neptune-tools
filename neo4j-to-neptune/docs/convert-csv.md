@@ -102,7 +102,7 @@
 
 
             --parallelism <parallelism>
-                Parallelism level for Neptune bulk loading (default: MEDIUM)
+                Parallelism level for Neptune bulk loading (default: OVERSUBSCRIBE)
 
                 This options value is restricted to the following set of values:
                     LOW

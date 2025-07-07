@@ -84,15 +84,18 @@ public class ConvertCsv implements Runnable {
     @Once
     private String neptuneEndpoint;
 
-    @Option(name = {"--iam-role-arn"}, description = "IAM role ARN for Neptune bulk loading")
+    @Option(name = {"--iam-role-arn"}, description = "IAM role ARN for Neptune bulk loading. It will need S3 and Neptune access permissions. \n" +
+        "Refer to the following documentation for the specific policies/permissions required:\n" + //
+        "https://docs.aws.amazon.com/neptune/latest/userguide/bulk-load-tutorial-IAM-CreateRole.html\n" + //
+        "https://docs.aws.amazon.com/neptune/latest/userguide/bulk-load-tutorial-IAM-add-role-cluster.html")
     @RequiredOnlyIf(names = "--bulk-load")
     @Once
     private String iamRoleArn;
 
-    @Option(name = {"--parallelism"}, description = "Parallelism level for Neptune bulk loading (default: MEDIUM)")
+    @Option(name = {"--parallelism"}, description = "Parallelism level for Neptune bulk loading (default: OVERSUBSCRIBE)")
     @Once
     @AllowedValues(allowedValues = {"LOW", "MEDIUM", "HIGH", "OVERSUBSCRIBE"})
-    private String parallelism = "MEDIUM";
+    private String parallelism = "OVERSUBSCRIBE";
 
     @Option(name = {"--monitor"}, description = "Monitor Neptune bulk load progress until completion (default: true)")
     @Once

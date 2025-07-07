@@ -1591,7 +1591,7 @@ public class NeptuneBulkLoaderTest {
             assertTrue("Should contain upload attempt message",
                 error.contains("Starting async upload"));
             assertTrue("Should contain success message",
-                error.contains("Successfully uploaded 2 CSV files"));
+                error.contains("Successfully uploaded 2 files"));
 
         } catch (Exception e) {
             fail("Should not throw exception when S3AsyncClient is mocked successfully: " + e.getMessage());
@@ -1679,8 +1679,8 @@ public class NeptuneBulkLoaderTest {
 
         // Verify error message
         String error = errorStream.toString();
-        assertTrue("Should contain no CSV files message",
-            error.contains("No CSV files found in directory"));
+        assertTrue("Should contain files not found message",
+            error.contains("No files with correct extension were found in "));
 
         // Verify no S3 calls were made
         verify(mockS3AsyncClient, never()).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
@@ -1731,7 +1731,7 @@ public class NeptuneBulkLoaderTest {
         // Verify error message
         String error = errorStream.toString();
         assertTrue("Should contain partial failure message",
-            error.contains("Some CSV file uploads failed"));
+            error.contains("Failed uploading file(s) from"));
     }
 
 }

@@ -44,6 +44,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 public class NeptuneBulkLoader implements AutoCloseable {
     private static final Set<String> BULK_LOAD_STATUS_CODES_COMPLETED;
     private static final Set<String> BULK_LOAD_STATUS_CODES_FAILURES;
+    private static final int MAX_RETRIES = 3;
+    private static final int INITIAL_BACKOFF_MS = 1000;
+    private static final int CONNECTION_TIMEOUT_SECONDS = 30;
+    private static final int REQUEST_TIMEOUT_SECONDS = 120;
+    private static final int MONITOR_SLEEP_TIME_MS = 1000;
+    private static final int MONITOR_MAX_ATTEMPTS = 300;
 
     static {
         Set<String> completed = new HashSet<>();
@@ -97,7 +103,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
 
         // Example endpoint: my-neptune-cluster.cluster[-custom]-abc123.<region>.neptune.amazonaws.com
         String[] endpointParts = neptuneEndpoint.split("\\.");
-        if (endpointParts.length < 3) {
+        if (endpointParts.length < 4) {
             throw new IllegalArgumentException("Invalid Neptune endpoint format: " + neptuneEndpoint);
         }
         this.region = Region.of(endpointParts[2]);
@@ -120,7 +126,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
                 .build();
 
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(120))
+                .connectTimeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
                 .build();
 
         // Validate for not empty parameters
@@ -289,13 +295,11 @@ public class NeptuneBulkLoader implements AutoCloseable {
         HttpRequest request = buildBulkLoadRequest(s3SourceUri);
 
         // Retry configuration
-        int maxRetries = 3;
-        long initialBackoffMillis = 1000; // 1 second
         HttpResponse<String> response = null;
         String loadId = null;
 
         // Retry loop with exponential backoff
-        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
                 response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
@@ -314,24 +318,23 @@ public class NeptuneBulkLoader implements AutoCloseable {
                 System.err.println("Neptune bulk load started successfully! Load ID: " + loadId);
                 return loadId;
             } catch (Exception e) {
-                if (attempt == maxRetries) {
+                if (attempt == MAX_RETRIES) {
                     // Use response null check to avoid potential NPE
                     String errorDetails = (response != null)
                         ? "Status: " + response.statusCode() + " Response: " + response.body()
                         : "No response received";
                     String errorMessage = "Failed to start Neptune bulk load after " +
-                        (maxRetries + 1) + " attempts. " + errorDetails;
+                        (MAX_RETRIES + 1) + " attempts. " + errorDetails;
                     System.err.println(errorMessage);
                     throw new RuntimeException(errorMessage, e);
                 }
                 System.err.println("Attempt " + (attempt + 1) + " failed: " + e.getMessage());
                 try {
-                    Thread.sleep(initialBackoffMillis * (1L << attempt)); // Exponential backoff
+                    Thread.sleep(INITIAL_BACKOFF_MS * (1L << attempt)); // Exponential backoff
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt(); // Restore interrupt status
                     throw new RuntimeException("Retry interrupted", ie);
                 }
-                Thread.sleep(initialBackoffMillis * (1L << attempt)); // Exponential backoff
             }
         }
         return loadId;
@@ -345,7 +348,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
                 .uri(URI.create(loaderEndpoint))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                .timeout(Duration.ofSeconds(120))
+                .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
                 .build();
     }
 
@@ -377,7 +380,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
                     .uri(URI.create(testEndpoint))
                     .header("Content-Type", "application/json")
                     .GET()
-                    .timeout(Duration.ofSeconds(30))
+                    .timeout(Duration.ofSeconds(CONNECTION_TIMEOUT_SECONDS))
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -406,11 +409,9 @@ public class NeptuneBulkLoader implements AutoCloseable {
      */
     public void monitorLoadProgress(String loadId) throws Exception {
         System.err.println("Monitoring load progress for job: " + loadId);
-        int sleepTimeMs = 1000;
-        int maxAttempts = 300; // Monitor for up to 5 minutes
         int attempt = 0;
 
-        while (attempt < maxAttempts) {
+        while (attempt < MONITOR_MAX_ATTEMPTS) {
             String statusResponse = checkNeptuneBulkLoadStatus(loadId);
 
             if (statusResponse != null) {
@@ -437,13 +438,13 @@ public class NeptuneBulkLoader implements AutoCloseable {
                 }
             }
 
-            Thread.sleep(sleepTimeMs); // Wait 1 second
+            Thread.sleep(MONITOR_SLEEP_TIME_MS);
             attempt++;
         }
 
-        if (attempt >= maxAttempts) {
-            System.err.println(
-                "Monitoring timeouted at " + sleepTimeMs * maxAttempts + "ms. Check load status manually.");
+        if (attempt >= MONITOR_MAX_ATTEMPTS) {
+            System.err.println("Monitoring timeouted at " +
+                MONITOR_SLEEP_TIME_MS * MONITOR_MAX_ATTEMPTS + "ms. Check load status manually.");
         }
     }
 
@@ -457,7 +458,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
                 .uri(URI.create(statusEndpoint))
                 .header("Content-Type", "application/json")
                 .GET()
-                .timeout(Duration.ofSeconds(30))
+                .timeout(Duration.ofSeconds(CONNECTION_TIMEOUT_SECONDS))
                 .build();
 
         HttpResponse<String> response = httpClient.send(request,
