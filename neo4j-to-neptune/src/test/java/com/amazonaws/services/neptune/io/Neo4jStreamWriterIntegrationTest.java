@@ -85,8 +85,6 @@ public class Neo4jStreamWriterIntegrationTest {
 
     @Test
     public void testStreamToFileWithRealDatabase() throws IOException {
-        // First, create some test data
-        createTestData();
 
         // Stream data to file
         File result = writer.streamToFile("integration-test");
@@ -149,8 +147,6 @@ public class Neo4jStreamWriterIntegrationTest {
 
     @Test
     public void testMultipleStreamOperations() throws IOException {
-        // Test multiple streaming operations with the same writer
-        createTestData();
 
         // First stream operation
         File result1 = writer.streamToFile("multi-test-1");
