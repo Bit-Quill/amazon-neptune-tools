@@ -185,7 +185,8 @@ public class Neo4jStreamWriter implements AutoCloseable {
                 writer.write(record.toString());
                 writer.newLine();
             }
-
+            writer.flush();
+            
             LOGGER.info(String.format("Successfully exported %d records from custom query to file: %s",
                 recordCount, file.getAbsolutePath()));
             return file;
@@ -272,6 +273,7 @@ public class Neo4jStreamWriter implements AutoCloseable {
                 lineCount++;
             }
         }
+        writer.flush();
         
         return lineCount;
     }

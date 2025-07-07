@@ -174,7 +174,7 @@ public class Neo4jStreamWriterTest {
     @Test
     public void testEmptyStringValidation() {
         // Test various empty string scenarios
-        String[] emptyStrings = {"", "   ", "\t", "\n", "\r\n"};
+        String[] emptyStrings = {"", "   ", "\t", "\n", "\r\n", null};
         
         for (String emptyString : emptyStrings) {
             try {
