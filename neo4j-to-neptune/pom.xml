@@ -10,7 +10,7 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <javac.target>1.8</javac.target>
+        <javac.target>17</javac.target>
         <uberjar.name>neo4j-to-neptune</uberjar.name>
     </properties>
 

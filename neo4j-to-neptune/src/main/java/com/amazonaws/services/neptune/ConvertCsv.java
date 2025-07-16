@@ -1,5 +1,5 @@
 /*
-Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+Copyright 2025 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Licensed under the Apache License, Version 2.0 (the "License").
 You may not use this file except in compliance with the License.
 A copy of the License is located at
@@ -93,45 +93,54 @@ public class ConvertCsv implements Runnable {
     private boolean inferTypes = false;
 
     // Neptune bulk load options
-    @Option(name = {"--bulk-load"}, description = "Enable bulk load to Neptune. If true, the output will be uploaded to S3 and loaded into Neptune using the bulk loader (default: false)")
+    @Option(name = {"--bulk-load-config"}, description = "Path to YAML file containing configuration for enabling bulk load to Neptune. " +
+        "If provided, configuration values are loaded from this file first, then overridden by any CLI parameters specified.")
+    @Path(mustExist = true, kind = PathKind.FILE)
     @Once
-    private boolean bulkLoad = false;
+    private File bulkLoadConfigFile;
 
-    @Option(name = {"--bucket-name"}, description = "S3 bucket name for CSV files to be stored")
-    @RequiredOnlyIf(names = "--bulk-load")
+    @Option(name = {"--bucket-name"}, description = "S3 bucket name for CSV files to be stored. " +
+        "Overrides bucket-name from bulk-load-config file if both are provided.")
     @Once
     private String bucketName;
 
-    @Option(name = {"--s3-prefix"}, description = "S3 prefix for uploaded file (default: neptune)")
+    @Option(name = {"--s3-prefix"}, description = "S3 prefix for uploaded file (default: neptune). " +
+        "Overrides s3-prefix from bulk-load-config file if both are provided.")
     @Once
     private String s3Prefix = "neptune";
 
     @Option(name = {"--neptune-endpoint"}, description =
-        "Neptune cluster endpoint. Example: my-neptune-cluster.cluster-abc123.<region>.neptune.amazonaws.com")
-    @RequiredOnlyIf(names = "--bulk-load")
+        "Neptune cluster endpoint. Example: my-neptune-cluster.cluster-abc123.<region>.neptune.amazonaws.com. " +
+        "Overrides neptune-endpoint from bulk-load-config file if both are provided. " +
+        "Either this parameter or --bulk-load-config must be provided to enable bulk loading.")
     @Once
     private String neptuneEndpoint;
 
-    @Option(name = {"--iam-role-arn"}, description = "IAM role ARN for Neptune bulk loading. It will need S3 and Neptune access permissions. \n" +
+    @Option(name = {"--iam-role-arn"}, description = "IAM role ARN for Neptune bulk loading. It will need S3 and Neptune access permissions. " +
+        "Overrides iam-role-arn from bulk-load-config file if both are provided. \n" +
         "Refer to the following documentation for the specific policies/permissions required:\n" + //
         "https://docs.aws.amazon.com/neptune/latest/userguide/bulk-load-tutorial-IAM-CreateRole.html\n" + //
         "https://docs.aws.amazon.com/neptune/latest/userguide/bulk-load-tutorial-IAM-add-role-cluster.html")
-    @RequiredOnlyIf(names = "--bulk-load")
     @Once
     private String iamRoleArn;
 
-    @Option(name = {"--parallelism"}, description = "Parallelism level for Neptune bulk loading (default: OVERSUBSCRIBE)")
+    @Option(name = {"--parallelism"}, description = "Parallelism level for Neptune bulk loading (default: OVERSUBSCRIBE). " +
+        "Overrides parallelism from bulk-load-config file if both are provided.")
     @Once
     @AllowedValues(allowedValues = {"LOW", "MEDIUM", "HIGH", "OVERSUBSCRIBE"})
     private String parallelism = "OVERSUBSCRIBE";
 
-    @Option(name = {"--monitor"}, description = "Monitor Neptune bulk load progress until completion (default: true)")
+    @Option(name = {"--monitor"}, description = "Monitor Neptune bulk load progress until completion (default: true). " +
+        "Overrides monitor from bulk-load-config file if both are provided.")
     @Once
     private boolean monitor = true;
 
     @Override
     public void run() {
         try {
+            // Early validation: Check if user wants to bulk load and validate parameters before conversion
+            BulkLoadConfig bulkLoadConfig = readBulkLoadConfig();
+
             // Load label mapping configuration
             ConversionConfig conversionConfig = ConversionConfig.fromFile(conversionConfigFile);
 
@@ -244,20 +253,20 @@ public class ConvertCsv implements Runnable {
 
             }
 
-            // Only perform bulk load operations if --bulk-load is enabled
-            if (bulkLoad) {
+            // Bulk loading happens AFTER conversion (using pre-validated config)
+            if (bulkLoadConfig != null) {
                 try (NeptuneBulkLoader neptuneBulkLoader = new NeptuneBulkLoader(
-                        bucketName,
-                        s3Prefix,
-                        neptuneEndpoint,
-                        iamRoleArn,
-                        parallelism)) {
+                        bulkLoadConfig.getBucketName(),
+                        bulkLoadConfig.getS3Prefix(),
+                        bulkLoadConfig.getNeptuneEndpoint(),
+                        bulkLoadConfig.getIamRoleArn(),
+                        bulkLoadConfig.getParallelism())) {
 
                     String uri = directories.outputDirectory().toFile().getAbsolutePath();
                     String s3SourceUri = neptuneBulkLoader.uploadCsvFilesToS3(uri);
                     String loadId = neptuneBulkLoader.startNeptuneBulkLoad(s3SourceUri);
 
-                    if (monitor) {
+                    if (bulkLoadConfig.isMonitor()) {
                         neptuneBulkLoader.monitorLoadProgress(loadId);
                     }
                 }
@@ -266,5 +275,29 @@ public class ConvertCsv implements Runnable {
             System.err.println("An error occurred while running convert-csv:");
             e.printStackTrace();
         }
+    }
+
+    /**
+     * Validates and prepares bulk load configuration if bulk loading is requested.
+     * @return BulkLoadConfig if bulk loading is requested and valid, null if no bulk loading requested
+     * @throws IllegalArgumentException if bulk loading is requested but configuration is invalid
+     * @throws IOException if there's an error reading the bulk load config file
+     */
+    private BulkLoadConfig readBulkLoadConfig() throws Exception {
+        if (bulkLoadConfigFile == null && neptuneEndpoint == null) {
+            return null; // No bulk loading requested
+        }
+
+        BulkLoadConfig config = BulkLoadConfig.fromFile(bulkLoadConfigFile)
+            .withBucketName(bucketName)
+            .withS3Prefix(s3Prefix)
+            .withNeptuneEndpoint(neptuneEndpoint)
+            .withIamRoleArn(iamRoleArn)
+            .withParallelism(parallelism)
+            .withMonitor(monitor);
+
+        BulkLoadConfig.validateBulkLoadConfig(config);
+
+        return config;
     }
 }

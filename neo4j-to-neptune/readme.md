@@ -14,10 +14,18 @@ java -jar neo4j-to-neptune.jar convert-csv -i /tmp/neo4j-export.csv -d output --
 java -jar neo4j-to-neptune.jar convert-csv \
   -i /tmp/neo4j-export.csv \
   -d output \
-  --bulk-load \
-  --bucket-name my-neptune-bucket \
   --neptune-endpoint my-cluster.cluster-abc123.us-east-2.neptune.amazonaws.com \
+  --bucket-name my-neptune-bucket \
   --iam-role-arn arn:aws:iam::123456789012:role/NeptuneLoadFromS3 \
+  --infer-types
+```
+
+**Convert and bulk load using configuration file:**
+```bash
+java -jar neo4j-to-neptune.jar convert-csv \
+  -i /tmp/neo4j-export.csv \
+  -d output \
+  --bulk-load-config bulk-load-config.yaml \
   --infer-types
 ```
 
@@ -113,7 +121,7 @@ Use the [Neptune bulk loader](https://docs.aws.amazon.com/neptune/latest/usergui
 
 ### Convert and Bulk Load
 
-The `convert-csv` command now supports an integrated bulk loading option that automatically uploads converted CSV files to S3 and initiates the Neptune bulk load process.
+The `convert-csv` command supports an integrated bulk loading option that automatically uploads converted CSV files to S3 and initiates the Neptune bulk load process. You can configure bulk loading using either CLI parameters or a YAML configuration file.
 
 #### Prerequisites
 
@@ -134,39 +142,97 @@ Before using the bulk load feature, ensure you have:
 
 4. **Neptune Cluster**: A running Neptune cluster with bulk load enabled, where the region is the same as your S3 bucket
 
-#### Usage
+#### Configuration Methods
 
-To enable bulk load, add the `--bulk-load` flag along with the required parameters:
+##### Method 1: Using CLI Parameters
+
+To enable bulk load using CLI parameters, provide the required Neptune configuration:
 
 ```bash
 java -jar neo4j-to-neptune.jar convert-csv \
   -i /path/to/neo4j-export.csv \
   -d /path/to/output \
-  --bulk-load \
-  --bucket-name your-s3-bucket \
   --neptune-endpoint your-cluster.cluster-abc123.region.neptune.amazonaws.com \
+  --bucket-name your-s3-bucket \
   --iam-role-arn arn:aws:iam::account:role/YourNeptuneRole \
   [additional options]
 ```
 
-#### Required Parameters (when --bulk-load is used)
+##### Method 2: Using Configuration File
 
-- `--bucket-name`: S3 bucket name where CSV files will be uploaded
-- `--neptune-endpoint`: Neptune cluster endpoint URL
-- `--iam-role-arn`: IAM role ARN with Neptune bulk load permissions
+Create a YAML configuration file with your bulk load settings:
+
+**bulk-load-config.yaml:**
+```yaml
+# S3 Configuration
+bucket-name: "my-neptune-bulk-load-bucket"
+s3-prefix: "neptune-data"
+
+# Neptune Configuration
+neptune-endpoint: "my-neptune-cluster.cluster-abc123def456.us-east-1.neptune.amazonaws.com"
+
+# IAM Configuration
+iam-role-arn: "arn:aws:iam::123456789012:role/NeptuneLoadFromS3Role"
+
+# Performance Settings
+parallelism: "OVERSUBSCRIBE"  # Options: LOW, MEDIUM, HIGH, OVERSUBSCRIBE
+
+# Monitoring
+monitor: true
+```
+
+Then use the configuration file:
+
+```bash
+java -jar neo4j-to-neptune.jar convert-csv \
+  -i /path/to/neo4j-export.csv \
+  -d /path/to/output \
+  --bulk-load-config bulk-load-config.yaml \
+  [additional options]
+```
+
+##### Method 3: Hybrid Approach (Configuration File + CLI Overrides)
+
+You can use a configuration file and override specific parameters via CLI:
+
+```bash
+java -jar neo4j-to-neptune.jar convert-csv \
+  -i /path/to/neo4j-export.csv \
+  -d /path/to/output \
+  --bulk-load-config bulk-load-config.yaml \
+  --neptune-endpoint different-cluster.cluster-xyz789.us-west-2.neptune.amazonaws.com \
+  --parallelism HIGH \
+  [additional options]
+```
+
+**Parameter Precedence:** CLI parameters override configuration file values, which override default values.
+
+#### Required Parameters
+
+The following parameters must be provided either via CLI or configuration file:
+
+- **Neptune endpoint**: `--neptune-endpoint` or `neptune-endpoint` in YAML
+- **S3 bucket name**: `--bucket-name` or `bucket-name` in YAML  
+- **IAM role ARN**: `--iam-role-arn` or `iam-role-arn` in YAML
 
 #### Optional Parameters
 
-- `--s3-prefix`: S3 prefix for uploaded file (default: neptune)
-- `--monitor`: Monitor Neptune bulk load progress until completion (default: true)
-- `--parallelism`: Parallelism level for Neptune bulk loading (default: MEDIUM)
+- **S3 prefix**: `--s3-prefix` or `s3-prefix` in YAML (default: "neptune")
+- **Parallelism**: `--parallelism` or `parallelism` in YAML (default: "OVERSUBSCRIBE")
+  - Options: `LOW`, `MEDIUM`, `HIGH`, `OVERSUBSCRIBE`
+- **Monitor progress**: `--monitor` or `monitor` in YAML (default: true)
+
+#### Early Validation
+
+When bulk load parameters are provided (either via `--bulk-load-config` or `--neptune-endpoint`), the tool validates all bulk load parameters before starting the conversion process. If any required parameters are missing or invalid, the conversion will be aborted with a clear error message indicating which parameters are missing.
 
 #### What happens during bulk load
 
-1. **Convert**: Neo4j CSV is converted to Gremlin load data format
-2. **Upload**: Converted CSV files are uploaded to S3
-3. **Load**: Neptune bulk load job is initiated
-4. **Monitor**: (Optional) Progress is monitored until completion or timeout
+1. **Validate**: All bulk load parameters are validated before conversion starts
+2. **Convert**: Neo4j CSV is converted to Gremlin load data format
+3. **Upload**: Converted CSV files are uploaded to S3
+4. **Load**: Neptune bulk load job is initiated
+5. **Monitor**: (Optional) Progress is monitored until completion or timeout
 
 #### Example Output
 
