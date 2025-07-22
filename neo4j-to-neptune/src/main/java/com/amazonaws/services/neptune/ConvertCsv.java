@@ -32,7 +32,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.util.Iterator;
 
-@Command(name = "convert-csv", description = "Converts CSV file exported from Neo4j via 'apoc.export.csv.all' to Neptune Gremlin load data formatted CSV files, \n" + //
+@Command(name = "convert-csv", description = "Converts CSV file exported from Neo4j via 'apoc.export.csv.all' to Neptune Gremlin load data formatted CSV files, " +
         "and optionally automates the bulk loading of the converted data into Amazon Neptune.")
 public class ConvertCsv implements Runnable {
 
@@ -104,10 +104,10 @@ public class ConvertCsv implements Runnable {
     @Once
     private String bucketName;
 
-    @Option(name = {"--s3-prefix"}, description = "S3 prefix for uploaded file (default: neptune). " +
+    @Option(name = {"--s3-prefix"}, description = "S3 prefix for uploaded file. " +
         "Overrides s3-prefix from bulk-load-config file if both are provided.")
     @Once
-    private String s3Prefix = "neptune";
+    private String s3Prefix;
 
     @Option(name = {"--neptune-endpoint"}, description =
         "Neptune cluster endpoint. Example: my-neptune-cluster.cluster-abc123.<region>.neptune.amazonaws.com. " +
@@ -128,12 +128,12 @@ public class ConvertCsv implements Runnable {
         "Overrides parallelism from bulk-load-config file if both are provided.")
     @Once
     @AllowedValues(allowedValues = {"LOW", "MEDIUM", "HIGH", "OVERSUBSCRIBE"})
-    private String parallelism = "OVERSUBSCRIBE";
+    private String parallelism;
 
-    @Option(name = {"--monitor"}, description = "Monitor Neptune bulk load progress until completion (default: true). " +
+    @Option(name = {"--monitor"}, description = "Monitor Neptune bulk load progress until completion (default: false). " +
         "Overrides monitor from bulk-load-config file if both are provided.")
     @Once
-    private boolean monitor = true;
+    private boolean monitor;
 
     @Override
     public void run() {
@@ -255,12 +255,7 @@ public class ConvertCsv implements Runnable {
 
             // Bulk loading happens AFTER conversion (using pre-validated config)
             if (bulkLoadConfig != null) {
-                try (NeptuneBulkLoader neptuneBulkLoader = new NeptuneBulkLoader(
-                        bulkLoadConfig.getBucketName(),
-                        bulkLoadConfig.getS3Prefix(),
-                        bulkLoadConfig.getNeptuneEndpoint(),
-                        bulkLoadConfig.getIamRoleArn(),
-                        bulkLoadConfig.getParallelism())) {
+                try (NeptuneBulkLoader neptuneBulkLoader = new NeptuneBulkLoader(bulkLoadConfig)) {
 
                     String uri = directories.outputDirectory().toFile().getAbsolutePath();
                     String s3SourceUri = neptuneBulkLoader.uploadCsvFilesToS3(uri);
@@ -288,16 +283,28 @@ public class ConvertCsv implements Runnable {
             return null; // No bulk loading requested
         }
 
-        BulkLoadConfig config = BulkLoadConfig.fromFile(bulkLoadConfigFile)
-            .withBucketName(bucketName)
-            .withS3Prefix(s3Prefix)
-            .withNeptuneEndpoint(neptuneEndpoint)
-            .withIamRoleArn(iamRoleArn)
-            .withParallelism(parallelism)
-            .withMonitor(monitor);
+        // Get the bulk load config from file
+        BulkLoadConfig config = BulkLoadConfig.fromFile(bulkLoadConfigFile);
 
-        BulkLoadConfig.validateBulkLoadConfig(config);
+        // Override with required CLI parameters if provided
+        config.withBucketName(bucketName)
+              .withNeptuneEndpoint(neptuneEndpoint)
+              .withIamRoleArn(iamRoleArn);
 
+        // Override with optional CLI parameters if provided
+        if (s3Prefix != null) {
+            config.setS3Prefix(s3Prefix);
+        }
+
+        if (parallelism != null) {
+            config.setParallelism(parallelism);
+        }
+
+        if (monitor) {
+            config.setMonitor(monitor);
+        }
+
+        BulkLoadConfig.validateBulkLoadConfigFile(config);
         return config;
     }
 }

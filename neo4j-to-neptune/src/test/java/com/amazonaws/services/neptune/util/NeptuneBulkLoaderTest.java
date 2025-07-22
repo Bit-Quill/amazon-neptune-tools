@@ -13,6 +13,7 @@ permissions and limitations under the License.
 package com.amazonaws.services.neptune.util;
 
 import com.amazonaws.services.neptune.TestDataProvider;
+import com.amazonaws.services.neptune.metadata.BulkLoadConfig;
 
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -92,14 +93,10 @@ public class NeptuneBulkLoaderTest {
         };
 
         for (String parallelism : validParallelismValues) {
+            BulkLoadConfig bulkLoadConfig = TestDataProvider.createBulkLoadConfig(
+                TestDataProvider.BUCKET, TestDataProvider.S3_PREFIX, TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN, parallelism, TestDataProvider.BULK_LOAD_MONITOR_FALSE);
             // Create NeptuneBulkLoader with each parallelism value
-            NeptuneBulkLoader loader = TestDataProvider.createNeptuneBulkLoader(
-                TestDataProvider.BUCKET,
-                TestDataProvider.S3_PREFIX,
-                TestDataProvider.NEPTUNE_ENDPOINT,
-                TestDataProvider.IAM_ROLE_ARN,
-                parallelism
-            );
+            NeptuneBulkLoader loader = new NeptuneBulkLoader(bulkLoadConfig);
 
             // Verify it was created successfully (not null)
             assertNotNull("NeptuneBulkLoader should be created with parallelism: " + parallelism, loader);
@@ -115,53 +112,21 @@ public class NeptuneBulkLoaderTest {
     }
 
     @Test
-    public void testConstructorWithInvalidParameters() {
-        Object[][] invalidParameters = {
-            {"Empty bucket name", "", TestDataProvider.S3_PREFIX, TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN, TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM},
-            {"Empty S3 prefix", TestDataProvider.BUCKET, "", TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN, TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM},
-            {"Empty Neptune endpoint", TestDataProvider.BUCKET, TestDataProvider.S3_PREFIX, "", TestDataProvider.IAM_ROLE_ARN, TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM},
-            {"Empty IAM role ARN", TestDataProvider.BUCKET, TestDataProvider.S3_PREFIX, TestDataProvider.NEPTUNE_ENDPOINT, "", TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM},
-            {"Empty parallelism", TestDataProvider.BUCKET, TestDataProvider.S3_PREFIX, TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN, ""},
-            {"Whitespace bucket name", " ", TestDataProvider.S3_PREFIX, TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN, TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM},
-            {"Whitespace S3 prefix", TestDataProvider.BUCKET, " ", TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN, TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM}
-        };
+    public void testConstructorWithEmptyS3Prefix() {
+        BulkLoadConfig bulkLoadConfig = TestDataProvider.createBulkLoadConfig(
+            TestDataProvider.BUCKET, "", TestDataProvider.NEPTUNE_ENDPOINT, TestDataProvider.IAM_ROLE_ARN, TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM, TestDataProvider.BULK_LOAD_MONITOR_FALSE);
+            // Create NeptuneBulkLoader with blank s3prefix
+            NeptuneBulkLoader loader = new NeptuneBulkLoader(bulkLoadConfig);
 
-        for (Object[] params : invalidParameters) {
-            String testCase = (String) params[0];
-            try {
-                TestDataProvider.createNeptuneBulkLoader(
-                    (String) params[1], (String) params[2], (String) params[3],
-                    (String) params[4], (String) params[5]);
-                fail("Should throw IllegalArgumentException for: " + testCase);
-            } catch (IllegalArgumentException e) {
-                // Validate the exception message contains relevant information
-                assertNotNull("Exception message should not be null for: " + testCase, e.getMessage());
-                assertTrue("Exception message should not be empty for: " + testCase,
-                    !e.getMessage().trim().isEmpty());
-
-                // Validate that the exception message is descriptive
-                String message = e.getMessage().toLowerCase();
-                if (testCase.contains("bucket")) {
-                    assertTrue("Exception should mention bucket for: " + testCase,
-                        message.contains("bucket"));
-                } else if (testCase.contains("s3")) {
-                    assertTrue("Exception should mention S3 or prefix for: " + testCase,
-                        message.contains("s3") || message.contains("prefix"));
-                } else if (testCase.contains("neptune")) {
-                    assertTrue("Exception should mention Neptune or endpoint for: " + testCase,
-                        message.contains("neptune") || message.contains("endpoint"));
-                } else if (testCase.contains("iam")) {
-                    assertTrue("Exception should mention IAM or role for: " + testCase,
-                        message.contains("iam") || message.contains("role"));
-                } else if (testCase.contains("parallelism")) {
-                    assertTrue("Exception should mention parallelism for: " + testCase,
-                        message.contains("parallelism"));
-                }
-            } catch (Exception e) {
-                fail("Should throw IllegalArgumentException, but got " + e.getClass().getSimpleName() +
-                     " for: " + testCase + ". Message: " + e.getMessage());
-            }
-        }
+            // Verify constructor output messages
+            String error = errorStream.toString();
+            assertTrue("Should contain bucket name", error.contains("S3 Bucket: " + TestDataProvider.BUCKET));
+            assertTrue("Should contain S3 prefix", error.contains("S3 Prefix: "));
+            assertTrue("Should contain region", error.contains("AWS Region: " + TestDataProvider.REGION_US_EAST_2));
+            assertTrue("Should contain IAM role ARN", error.contains("IAM Role ARN: " + TestDataProvider.IAM_ROLE_ARN));
+            assertTrue("Should contain Neptune endpoint", error.contains("Neptune Endpoint: " + TestDataProvider.NEPTUNE_ENDPOINT));
+            assertTrue("Should contain Neptune bulk load parallelism", error.contains("Bulk Load Parallelism: " + TestDataProvider.BULK_LOAD_PARALLELISM_MEDIUM));
+            assertNotNull("NeptuneBulkLoader should be created", loader);
     }
 
     @Test
@@ -283,7 +248,7 @@ public class NeptuneBulkLoaderTest {
     public void testUploadSingleFileAsyncWithNonExistentDirectory() throws Exception {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader();
 
-        neptuneBulkLoader.uploadSingleFileAsync("/non/existent/file.csv", TestDataProvider.S3_KEY);
+        neptuneBulkLoader.uploadSingleFileAsync("/non/existent/file.csv", TestDataProvider.S3_PREFIX);
     }
 
     @Test(expected = IllegalStateException.class)
@@ -292,7 +257,7 @@ public class NeptuneBulkLoaderTest {
 
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader();
 
-        neptuneBulkLoader.uploadSingleFileAsync(testDir.getAbsolutePath(), TestDataProvider.S3_KEY);
+        neptuneBulkLoader.uploadSingleFileAsync(testDir.getAbsolutePath(), TestDataProvider.S3_PREFIX);
     }
 
     @Test
@@ -1653,7 +1618,7 @@ public class NeptuneBulkLoaderTest {
     public void testUploadFileAsyncWithNonExistentDirectory() throws Exception {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader();
 
-        neptuneBulkLoader.uploadFileAsync("/non/existent/directory", TestDataProvider.S3_KEY);
+        neptuneBulkLoader.uploadFileAsync("/non/existent/directory", TestDataProvider.S3_PREFIX);
     }
 
     @Test
@@ -1670,7 +1635,7 @@ public class NeptuneBulkLoaderTest {
 
         CompletableFuture<Boolean> result = neptuneBulkLoader.uploadFileAsync(
             testDir.getAbsolutePath(),
-            TestDataProvider.S3_KEY
+            TestDataProvider.S3_PREFIX
         );
 
         // Should return false for empty directory

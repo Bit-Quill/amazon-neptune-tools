@@ -217,10 +217,10 @@ The following parameters must be provided either via CLI or configuration file:
 
 #### Optional Parameters
 
-- **S3 prefix**: `--s3-prefix` or `s3-prefix` in YAML (default: "neptune")
+- **S3 prefix**: `--s3-prefix` or `s3-prefix` in YAML
 - **Parallelism**: `--parallelism` or `parallelism` in YAML (default: "OVERSUBSCRIBE")
   - Options: `LOW`, `MEDIUM`, `HIGH`, `OVERSUBSCRIBE`
-- **Monitor progress**: `--monitor` or `monitor` in YAML (default: true)
+- **Monitor progress**: `--monitor` or `monitor` in YAML (default: false)
 
 #### Early Validation
 

@@ -35,6 +35,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.amazonaws.services.neptune.metadata.BulkLoadConfig;
 import com.fasterxml.jackson.databind.JsonNode;
 
 /**
@@ -80,75 +81,70 @@ public class NeptuneBulkLoader implements AutoCloseable {
     private final String neptuneEndpoint;
     private final String iamRoleArn;
     private final String parallelism;
+    private final Boolean monitor;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    public NeptuneBulkLoader(
-            String bucketName, String s3Prefix, String neptuneEndpoint, String iamRoleArn, String parallelism) {
+    public NeptuneBulkLoader(BulkLoadConfig bulkLoadConfig) {
+        this.bucketName = bulkLoadConfig.getBucketName().replaceAll("/+$", "");
+        this.s3Prefix = bulkLoadConfig.getS3Prefix().replaceAll("/+$", "");
+        this.neptuneEndpoint = bulkLoadConfig.getNeptuneEndpoint();
+        this.region = extractRegionFromEndpoint(this.neptuneEndpoint);
+        this.iamRoleArn = bulkLoadConfig.getIamRoleArn();
+        this.parallelism = bulkLoadConfig.getParallelism().toUpperCase();
+        this.monitor = bulkLoadConfig.isMonitor();
 
-        if (bucketName == null || bucketName.trim().isEmpty()) {
-            throw new IllegalArgumentException("Bucket name cannot be null or empty");
-        }
-        this.bucketName = bucketName.replaceAll("/+$", "");
-
-        if (s3Prefix == null || s3Prefix.trim().isEmpty()) {
-            throw new IllegalArgumentException("S3 prefix cannot be empty");
-        }
-        this.s3Prefix = s3Prefix.replaceAll("/+$", "");
-
-        if (neptuneEndpoint == null || neptuneEndpoint.trim().isEmpty()) {
-            throw new IllegalArgumentException("Neptune endpoint cannot be null or empty");
-        }
-        this.neptuneEndpoint = neptuneEndpoint;
-
-        // Example endpoint: my-neptune-cluster.cluster[-custom]-abc123.<region>.neptune.amazonaws.com
-        String[] endpointParts = neptuneEndpoint.split("\\.");
-        if (endpointParts.length < 4) {
-            throw new IllegalArgumentException("Invalid Neptune endpoint format: " + neptuneEndpoint);
-        }
-        this.region = Region.of(endpointParts[2]);
-
-        if (iamRoleArn == null || iamRoleArn.trim().isEmpty()) {
-            throw new IllegalArgumentException("IAM role ARN cannot be null or empty");
-        }
-        this.iamRoleArn = iamRoleArn;
-
-        if (parallelism == null || parallelism.trim().isEmpty()) {
-            throw new IllegalArgumentException("Parallelism cannot be null or empty");
-        }
-        this.parallelism = parallelism;
-
+        // Initialize clients
         this.objectMapper = new ObjectMapper();
-
         this.s3AsyncClient = S3AsyncClient.builder()
                 .region(region)
                 .credentialsProvider(DefaultCredentialsProvider.create())
                 .build();
-
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
                 .build();
 
-        // Validate for not empty parameters
+        // Log configuration
+        logConfiguration();
+    }
+
+    /**
+     * Extracts the AWS region from the Neptune endpoint
+     * @param endpoint The Neptune endpoint
+     * @return The AWS region
+     * @throws IllegalArgumentException if the endpoint format is invalid
+     */
+    private Region extractRegionFromEndpoint(String endpoint) {
+        // Example endpoint: my-neptune-cluster.cluster[-custom]-abc123.<region>.neptune.amazonaws.com
+        String[] endpointParts = endpoint.split("\\.");
+        if (endpointParts.length < 4) {
+            throw new IllegalArgumentException("Invalid Neptune endpoint format: " + endpoint);
+        }
+        return Region.of(endpointParts[2]);
+    }
+
+    /**
+     * Logs the configuration for debugging purposes
+     */
+    private void logConfiguration() {
         System.err.println("S3 Bucket: " + this.bucketName);
         System.err.println("S3 Prefix: " + this.s3Prefix);
         System.err.println("AWS Region: " + this.region);
         System.err.println("IAM Role ARN: " + this.iamRoleArn);
         System.err.println("Neptune Endpoint: " + this.neptuneEndpoint);
         System.err.println("Bulk Load Parallelism: " + this.parallelism);
+        System.err.println("Bulk Load Monitor: " + this.monitor);
     }
 
     // Constructor for testing
-    public NeptuneBulkLoader(String bucketName, String s3Prefix,
-            String neptuneEndpoint, String iamRoleArn, String parallelism,
-            HttpClient httpClient, S3AsyncClient s3AsyncClient) {
-        this.bucketName = bucketName;
-        this.s3Prefix = s3Prefix;
-        this.neptuneEndpoint = neptuneEndpoint;
-        // Example endpoint: my-neptune-cluster.cluster[-custom]-abc123.<region>.neptune.amazonaws.com
+    public NeptuneBulkLoader(BulkLoadConfig bulkLoadConfig, HttpClient httpClient, S3AsyncClient s3AsyncClient) {
+        this.bucketName = bulkLoadConfig.getBucketName().replaceAll("/+$", "");
+        this.s3Prefix = bulkLoadConfig.getS3Prefix().replaceAll("/+$", "");
+        this.neptuneEndpoint = bulkLoadConfig.getNeptuneEndpoint();
         this.region = Region.of(neptuneEndpoint.split("\\.")[2]);
-        this.iamRoleArn = iamRoleArn;
-        this.parallelism = parallelism;
+        this.iamRoleArn = bulkLoadConfig.getIamRoleArn();
+        this.parallelism = bulkLoadConfig.getParallelism();
+        this.monitor = bulkLoadConfig.isMonitor();
         this.objectMapper = new ObjectMapper();
         this.s3AsyncClient = s3AsyncClient;
         this.httpClient = httpClient;

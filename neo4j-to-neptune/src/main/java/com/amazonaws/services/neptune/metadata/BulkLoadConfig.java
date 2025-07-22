@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Configuration class for Neptune bulk load settings from YAML file.
@@ -37,11 +38,14 @@ import java.util.Map;
 public class BulkLoadConfig {
 
     private String bucketName;
-    private String s3Prefix = "neptune";
+    private String s3Prefix;
     private String neptuneEndpoint;
     private String iamRoleArn;
-    private String parallelism = "OVERSUBSCRIBE";
-    private boolean monitor = true;
+    private String parallelism;
+    private boolean monitor;
+    private static final String DEFAULT_S3_PREFIX = "";
+    private static final String DEFAULT_PARALLELISM = "OVERSUBSCRIBE";
+    private static final boolean DEFAULT_MONITOR = false;
 
     public static BulkLoadConfig fromFile(File configFile) throws IOException {
         BulkLoadConfig config = new BulkLoadConfig();
@@ -60,11 +64,11 @@ public class BulkLoadConfig {
     private void loadFromYaml(Map<String, Object> yamlData) {
         if (yamlData != null) {
             this.bucketName = getStringValue(yamlData, "bucket-name");
-            this.s3Prefix = getStringValue(yamlData, "s3-prefix", this.s3Prefix);
+            this.s3Prefix = getStringValue(yamlData, "s3-prefix", DEFAULT_S3_PREFIX);
             this.neptuneEndpoint = getStringValue(yamlData, "neptune-endpoint");
             this.iamRoleArn = getStringValue(yamlData, "iam-role-arn");
-            this.parallelism = getStringValue(yamlData, "parallelism", this.parallelism);
-            this.monitor = getBooleanValue(yamlData, "monitor", this.monitor);
+            this.parallelism = getStringValue(yamlData, "parallelism", DEFAULT_PARALLELISM);
+            this.monitor = getBooleanValue(yamlData, "monitor", DEFAULT_MONITOR);
         }
     }
 
@@ -79,24 +83,18 @@ public class BulkLoadConfig {
 
     private boolean getBooleanValue(Map<String, Object> yamlData, String key, boolean defaultValue) {
         Object value = yamlData.get(key);
-        if (value instanceof Boolean) {
+        if (value == null) {
+            return defaultValue;
+        } else if (value instanceof Boolean) {
             return (Boolean) value;
-        } else if (value instanceof String) {
-            return Boolean.parseBoolean((String) value);
+        } else {
+            throw new IllegalArgumentException("Expected boolean value for " + key);
         }
-        return defaultValue;
     }
 
     public BulkLoadConfig withBucketName(String bucketName) {
         if (bucketName != null && !bucketName.trim().isEmpty()) {
             this.bucketName = bucketName;
-        }
-        return this;
-    }
-
-    public BulkLoadConfig withS3Prefix(String s3Prefix) {
-        if (s3Prefix != null && !s3Prefix.trim().isEmpty()) {
-            this.s3Prefix = s3Prefix;
         }
         return this;
     }
@@ -115,42 +113,51 @@ public class BulkLoadConfig {
         return this;
     }
 
-    public BulkLoadConfig withParallelism(String parallelism) {
-        if (parallelism != null && !parallelism.trim().isEmpty()) {
-            this.parallelism = parallelism;
+    /**
+     * Validates the bulk load configuration
+     * @param config The configuration to validate
+     * @throws IllegalArgumentException if the configuration is invalid
+     */
+    public static void validateBulkLoadConfigFile(BulkLoadConfig config) throws IllegalArgumentException {
+        // Collect missing required parameters
+        StringBuilder errorMsg = new StringBuilder();
+
+        // Check required fields
+        if (isNullOrEmpty(config.getNeptuneEndpoint())) {
+            errorMsg.append("  - Neptune endpoint (--neptune-endpoint)\n");
         }
-        return this;
+
+        if (isNullOrEmpty(config.getBucketName())) {
+            errorMsg.append("  - S3 bucket name (--bucket-name)\n");
+        }
+
+        if (isNullOrEmpty(config.getIamRoleArn())) {
+            errorMsg.append("  - IAM role ARN (--iam-role-arn)\n");
+        }
+
+        // If any required fields are missing, throw exception with all missing fields
+        if (errorMsg.length() > 0) {
+            throw new IllegalArgumentException(
+                "Error: Missing required bulk load parameters. " +
+                "Please ensure the following are provided either via CLI or config file:\n" + errorMsg);
+        }
+
+        // Validate parallelism if present
+        String parallelism = config.getParallelism();
+        if (!isNullOrEmpty(parallelism)) {
+            Set<String> validParallelismOptions = Set.of("LOW", "MEDIUM", "HIGH", "OVERSUBSCRIBE");
+            if (!validParallelismOptions.contains(parallelism.toUpperCase())) {
+                throw new IllegalArgumentException("Parallelism must be one of: LOW, MEDIUM, HIGH, OVERSUBSCRIBE");
+            }
+        }
     }
 
-    public BulkLoadConfig withMonitor(Boolean monitor) {
-        if (monitor != null) {
-            this.monitor = monitor;
-        }
-        return this;
-    }
-
-    public static void validateBulkLoadConfig(BulkLoadConfig config) throws IllegalArgumentException {
-        if (!config.isValid()) {
-            StringBuilder errorMsg = new StringBuilder("Error: Missing required bulk load parameters. Please ensure the following are provided either via CLI or config file:\n");
-            if (config.getNeptuneEndpoint() == null || config.getNeptuneEndpoint().trim().isEmpty()) {
-                errorMsg.append("  - Neptune endpoint (--neptune-endpoint)\n");
-            }
-            if (config.getBucketName() == null || config.getBucketName().trim().isEmpty()) {
-                errorMsg.append("  - S3 bucket name (--bucket-name)\n");
-            }
-            if (config.getIamRoleArn() == null || config.getIamRoleArn().trim().isEmpty()) {
-                errorMsg.append("  - IAM role ARN (--iam-role-arn)\n");
-            }
-            errorMsg.append("Conversion aborted due to invalid bulk load configuration.");
-
-            throw new IllegalArgumentException(errorMsg.toString());
-        }
-    }
-
-    // Validation methods
-    private boolean isValid() {
-        return neptuneEndpoint != null && !neptuneEndpoint.trim().isEmpty() &&
-               bucketName != null && !bucketName.trim().isEmpty() &&
-               iamRoleArn != null && !iamRoleArn.trim().isEmpty();
+    /**
+     * Helper method to check if a string is null or empty
+     * @param str The string to check
+     * @return true if the string is null or empty, false otherwise
+     */
+    private static boolean isNullOrEmpty(String str) {
+        return str == null || str.trim().isEmpty();
     }
 }
