@@ -16,8 +16,20 @@ import java.io.File;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.nio.file.Files;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Supplier;
 
 import com.amazonaws.services.neptune.metadata.BulkLoadConfig;
+import com.amazonaws.services.neptune.metadata.ConversionConfig;
+import com.amazonaws.services.neptune.metadata.EdgeMetadata;
+import com.amazonaws.services.neptune.metadata.MultiValuedNodePropertyPolicy;
+import com.amazonaws.services.neptune.metadata.MultiValuedRelationshipPropertyPolicy;
+import com.amazonaws.services.neptune.metadata.PropertyValueParser;
+import com.amazonaws.services.neptune.metadata.VertexMetadata;
+import com.amazonaws.services.neptune.util.CSVUtils;
 import com.amazonaws.services.neptune.util.NeptuneBulkLoader;
 
 import software.amazon.awssdk.regions.Region;
@@ -159,5 +171,37 @@ public class TestDataProvider {
                              "e2,v1,v3,works_for,1.0\n" +
                              "e3,v2,v3,works_for,1.0\n";
         Files.write(edgesFile.toPath(), edgesContent.getBytes());
+    }
+
+    private static final Supplier<String> ID_GENERATOR = () -> "edge-id";
+
+    public static EdgeMetadata createEdgeMetadata(String columnHeaders) {
+        return EdgeMetadata.parse(
+                CSVUtils.firstRecord(columnHeaders),
+                ID_GENERATOR,
+                new PropertyValueParser(MultiValuedRelationshipPropertyPolicy.LeaveAsString, "", false),
+                new ConversionConfig(), new HashSet<String>(), new HashMap<String, String>());
+    }
+
+    public static EdgeMetadata createEdgeMetadata(String columnHeaders, ConversionConfig conversionConfig, Set<String> skippedVertexIds, Map<String, String> vertexIdMap) {
+        return EdgeMetadata.parse(
+                CSVUtils.firstRecord(columnHeaders),
+                ID_GENERATOR,
+                new PropertyValueParser(MultiValuedRelationshipPropertyPolicy.LeaveAsString, "", false),
+                conversionConfig, skippedVertexIds, vertexIdMap);
+    }
+
+    public static EdgeMetadata createEdgeMetadata(String columnHeaders, ConversionConfig conversionConfig, Set<String> skippedVertexIds) {
+        return EdgeMetadata.parse(
+                CSVUtils.firstRecord(columnHeaders),
+                ID_GENERATOR,
+                new PropertyValueParser(MultiValuedRelationshipPropertyPolicy.LeaveAsString, "", false),
+                conversionConfig, skippedVertexIds, new HashMap<String, String>());
+    }
+
+    public static VertexMetadata createVertexMetadata(String columnHeaders, ConversionConfig config) {
+        return VertexMetadata.parse(
+                CSVUtils.firstRecord(columnHeaders),
+                new PropertyValueParser(MultiValuedNodePropertyPolicy.PutInSetIgnoringDuplicates, "", false), config);
     }
 }

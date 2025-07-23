@@ -30,7 +30,11 @@ import org.apache.commons.csv.CSVRecord;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
 
 @Command(name = "convert-csv", description = "Converts CSV file exported from Neo4j via 'apoc.export.csv.all' to Neptune Gremlin load data formatted CSV files, " +
         "and optionally automates the bulk loading of the converted data into Amazon Neptune.")
@@ -174,83 +178,21 @@ public class ConvertCsv implements Runnable {
 
             try (Timer timer = new Timer();
                  OutputFile vertexFile = new OutputFile(directories, "vertices");
-                 OutputFile edgeFile = new OutputFile(directories, "edges");
-                 CSVParser parser = CSVUtils.newParser(input)) {
+                 OutputFile edgeFile = new OutputFile(directories, "edges")) {
 
-                Iterator<CSVRecord> iterator = parser.iterator();
+                // Process CSV in two passes to minimize memory usage
+                processCsvInTwoPasses(input, vertexFile, edgeFile, conversionConfig);
 
-                final AtomicLong vertexCount = new AtomicLong(0);
-                final AtomicLong edgeCount = new AtomicLong(0);
-                final AtomicLong skippedVertexCount = new AtomicLong(0);
-                final AtomicLong skippedEdgeCount = new AtomicLong(0);
+                System.err.println("Output  : " + directories.outputDirectory());
 
-                if (iterator.hasNext()) {
-                    CSVRecord headers = iterator.next();
-
-                    VertexMetadata vertexMetadata = VertexMetadata.parse(
-                            headers,
-                            new PropertyValueParser(multiValuedNodePropertyPolicy, semiColonReplacement, inferTypes),
-                            conversionConfig);
-                    EdgeMetadata edgeMetadata = EdgeMetadata.parse(
-                            headers,
-                            new PropertyValueParser(multiValuedRelationshipPropertyPolicy, semiColonReplacement, inferTypes),
-                            conversionConfig, vertexMetadata.getSkippedVertexIds());
-
-                    while (iterator.hasNext()) {
-                        CSVRecord record = iterator.next();
-                        if (vertexMetadata.isVertex(record)) {
-                            vertexMetadata.toIterable(record).ifPresentOrElse(it -> {
-                                try {
-                                    vertexFile.printRecord(it);
-                                    vertexCount.getAndIncrement();
-                                } catch (IOException e) {
-                                    throw new RuntimeException(e);
-                                }
-                            }, skippedVertexCount::getAndIncrement);
-                        } else if (edgeMetadata.isEdge(record)) {
-                            edgeMetadata.toIterable(record).ifPresentOrElse(it -> {
-                                try {
-                                    edgeFile.printRecord(it);
-                                    edgeCount.getAndIncrement();
-                                } catch (IOException e) {
-                                    throw new RuntimeException(e);
-                                }
-                            }, skippedEdgeCount::getAndIncrement);
-                        } else {
-                            throw new IllegalStateException("Unable to parse record: " + record.toString());
-                        }
-                    }
-
-                    vertexFile.printHeaders(vertexMetadata.headers());
-                    edgeFile.printHeaders(edgeMetadata.headers());
-
-                    System.err.println("Vertices: " + vertexCount);
-                    System.err.println("Edges   : " + edgeCount);
-
-                    if (conversionConfig.hasSkipRules()) {
-                        System.err.println("Skipped vertices: " + skippedVertexCount);
-                        System.err.println("Skipped edges  : " + skippedEdgeCount);
-                        System.err.println("Skip rules: " +
-                                (!conversionConfig.getSkipVertices().getById().isEmpty() ?
-                                        conversionConfig.getSkipVertices().getById().size() + " vertex IDs, " : "") +
-                                (!conversionConfig.getSkipVertices().getByLabel().isEmpty() ?
-                                        conversionConfig.getSkipVertices().getByLabel().size() + " vertex labels, " : "") +
-                                (!conversionConfig.getSkipEdges().getByLabel().isEmpty()  ?
-                                        conversionConfig.getSkipEdges().getByLabel().size() + " edge labels" : ""));
-                    }
-
-                    System.err.println("Output  : " + directories.outputDirectory());
-
-                    if (!conversionConfig.getVertexLabels().isEmpty() || !conversionConfig.getEdgeLabels().isEmpty()) {
-                        System.err.println("Label mappings applied from: " + conversionConfigFile.getAbsolutePath());
-                    }
-
-                    System.out.println(directories.outputDirectory());
-
-                    // delete streamed data file after conversion
-                    if (tempDataFile != null) Files.deleteIfExists(tempDataFile.toPath());
+                if (!conversionConfig.getVertexLabels().isEmpty() || !conversionConfig.getEdgeLabels().isEmpty()) {
+                    System.err.println("Label mappings applied from: " + conversionConfigFile.getAbsolutePath());
                 }
 
+                System.out.println(directories.outputDirectory());
+
+                // delete streamed data file after conversion
+                if (tempDataFile != null) Files.deleteIfExists(tempDataFile.toPath());
             }
 
             // Bulk loading happens AFTER conversion (using pre-validated config)
@@ -306,5 +248,130 @@ public class ConvertCsv implements Runnable {
 
         BulkLoadConfig.validateBulkLoadConfigFile(config);
         return config;
+    }
+
+    /**
+     * Processes the CSV file in two passes to minimize memory usage while supporting ID transformations.
+     * First pass processes vertices and builds ID mapping, second pass processes edges using that mapping.
+     */
+    private void processCsvInTwoPasses(File input, OutputFile vertexFile, OutputFile edgeFile,
+                                      ConversionConfig conversionConfig) throws IOException {
+
+        // First pass: Process vertices and build ID mapping
+        Map<String, String> vertexIdMap = new HashMap<>();
+        Set<String> skippedVertexIds = new HashSet<>();
+        AtomicLong skippedVertexCount = new AtomicLong(0);
+        AtomicLong vertexCount = new AtomicLong(0);
+
+        CSVRecord headers = null;
+
+        try (CSVParser parser = CSVUtils.newParser(input)) {
+            Iterator<CSVRecord> iterator = parser.iterator();
+            if (iterator.hasNext()) {
+                headers = iterator.next();
+                VertexMetadata vertexMetadata = VertexMetadata.parse(
+                    headers,
+                    new PropertyValueParser(multiValuedNodePropertyPolicy, semiColonReplacement, inferTypes),
+                    conversionConfig);
+
+                while (iterator.hasNext()) {
+                    CSVRecord record = iterator.next();
+                    if (vertexMetadata.isVertex(record)) {
+                        processVertex(vertexFile, vertexIdMap, skippedVertexIds, vertexCount, skippedVertexCount,
+                                vertexMetadata, record);
+                    }
+                }
+
+                // Write vertex headers
+                vertexFile.printHeaders(vertexMetadata.headers());
+            }
+        }
+
+        // Second pass: Process edges with vertex ID mapping
+        AtomicLong skippedEdgeCount = new AtomicLong(0);
+        AtomicLong edgeCount = new AtomicLong(0);
+
+        try (CSVParser parser = CSVUtils.newParser(input)) {
+            Iterator<CSVRecord> iterator = parser.iterator();
+            if (iterator.hasNext() && headers != null) {
+                // Skip header row
+                iterator.next();
+
+                // Create edge metadata with vertex ID mapping
+                EdgeMetadata edgeMetadata = EdgeMetadata.parse(
+                    headers,
+                    new PropertyValueParser(multiValuedRelationshipPropertyPolicy, semiColonReplacement, inferTypes),
+                    conversionConfig,
+                    skippedVertexIds,
+                    vertexIdMap);
+
+                while (iterator.hasNext()) {
+                    CSVRecord record = iterator.next();
+                    if (edgeMetadata.isEdge(record)) {
+                        processEdge(edgeFile, edgeCount, skippedEdgeCount, edgeMetadata, record);
+                    }
+                }
+
+                // Write edge headers
+                edgeFile.printHeaders(edgeMetadata.headers());
+            }
+        }
+
+        printStatistics(conversionConfig, vertexCount, skippedVertexCount, edgeCount, skippedEdgeCount);
+    }
+
+    private void processEdge(OutputFile edgeFile, AtomicLong edgeCount,
+            AtomicLong skippedEdgeCount, EdgeMetadata edgeMetadata, CSVRecord record) {
+
+        edgeMetadata.toIterable(record).ifPresentOrElse(it -> {
+            try {
+                edgeFile.printRecord(it);
+                edgeCount.incrementAndGet();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }, skippedEdgeCount::getAndIncrement);
+    }
+
+    private void processVertex(OutputFile vertexFile, Map<String, String> vertexIdMap, Set<String> skippedVertexIds,
+            AtomicLong vertexCount, AtomicLong skippedVertexCount, VertexMetadata vertexMetadata, CSVRecord record) {
+        vertexMetadata.toIterable(record).ifPresentOrElse(it -> {
+            try {
+                vertexFile.printRecord(it);
+                vertexCount.incrementAndGet();
+
+                // Store mapping between original and transformed IDs
+                String originalId = record.get(0);
+                // Get the transformed ID from the vertex metadata
+                String transformedId = vertexMetadata.getVertexIdMap().get(originalId);
+                if (transformedId != null) {
+                    vertexIdMap.put(originalId, transformedId);
+                }
+            } catch (IOException e) {
+                throw new RuntimeException("Error processing edge record: " + record, e);
+            }
+        }, () -> {
+            // Record was skipped
+            skippedVertexCount.incrementAndGet();
+            skippedVertexIds.add(record.get(0));
+        });
+    }
+
+    private void printStatistics(ConversionConfig conversionConfig,
+            AtomicLong vertexCount, AtomicLong skippedVertexCount, AtomicLong edgeCount, AtomicLong skippedEdgeCount) {
+
+        System.err.println("Vertices: " + vertexCount);
+        System.err.println("Edges   : " + edgeCount);
+        if (conversionConfig.hasSkipRules()) {
+            System.err.println("Skipped vertices: " + skippedVertexCount);
+            System.err.println("Skipped edges  : " + skippedEdgeCount);
+            System.err.println("Skip rules: " +
+                    (!conversionConfig.getSkipVertices().getById().isEmpty() ?
+                            conversionConfig.getSkipVertices().getById().size() + " vertex IDs, " : "") +
+                    (!conversionConfig.getSkipVertices().getByLabel().isEmpty() ?
+                            conversionConfig.getSkipVertices().getByLabel().size() + " vertex labels, " : "") +
+                    (!conversionConfig.getSkipEdges().getByLabel().isEmpty()  ?
+                            conversionConfig.getSkipEdges().getByLabel().size() + " edge labels" : ""));
+        }
     }
 }
