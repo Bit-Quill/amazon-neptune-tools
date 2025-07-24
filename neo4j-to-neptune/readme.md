@@ -87,7 +87,7 @@ The path that you specify for the export file will be resolved relative to the N
 
 Use the [`convert-csv`](docs/convert-csv.md) command-line utility to convert the CSV exported from Neo4j into the Neptune Gremlin bulk load CSV format.
 
-The utility has two required parameters: the path to the Neo4j export file and the name of a directory where the converted CSV files will be written. There are also optional parameters that allow you to specify node and relationship multi-valued property policies and turn on data type inferencing.
+The utility has two required parameters: the path to the Neo4j export file and the name of a directory where the converted CSV files will be written. There are also optional parameters that allow you to specify node, relationship multi-valued property policies, turn on data type inferencing, or to use a configuration YAML file for more granular conversion manipulation.
 
 #### Multi-valued property policies
 
@@ -114,6 +114,34 @@ The `--node-property-policy` and `--relationship-property-policy` parameters all
 When importing data into Neptune using the bulk loader, you can [specify the data type for each property](https://docs.aws.amazon.com/neptune/latest/userguide/bulk-load-tutorial-format-gremlin.html). If you supply an `--infer-types` flag to `convert-csv`, the utility will attempt to infer the narrowest supported type for each column in the output CSV.
 
 Note that `convert-csv` will always use a __double__ for values with decimal or scientific notation.
+
+#### Configuration with YAML
+
+The `convert-csv` utility supports conversion configuration through the YAML file for ID transformation, label mapping, and filtering:
+
+```bash
+java -jar neo4j-to-neptune.jar convert-csv \
+  -i /path/to/neo4j-export.csv \
+  -d /path/to/output \
+  --conversion-config conversion-config.yaml \
+  --infer-types
+```
+
+**Example configuration file:**
+For an example of the conversion config YAML file refer to `docs/example-conversion-config.yaml`
+
+**ID Transformation Templates:**
+
+Templates can reference original data fields using placeholders:
+
+- **Vertex templates**: `{_id}`, `{_labels}`, `{property_name}`
+- **Edge templates**: `{_type}`, `{_start}`, `{_end}`, `{~from}`, `{~to}`, `{property_name}`
+
+**Examples:**
+- `"{_labels}_{name}_{_id}"` → `"Person_John_123"`
+- `"e!{~label}_{~from}_{~to}"` → `"e!KNOWS_Person_123_Person_456"`
+
+The utility uses two-pass processing: first transforming vertices and building ID mappings, then processing edges with correct vertex references. When vertices are skipped, connected edges are automatically skipped to maintain graph consistency.
 
 ### Bulk Load into Neptune
 

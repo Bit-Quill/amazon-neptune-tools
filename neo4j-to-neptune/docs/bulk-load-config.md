@@ -39,9 +39,9 @@ monitor: true
 
 ### Optional Parameters
 
-- **`s3Prefix`**: S3 prefix for uploaded files (default: `neptune`)
+- **`s3Prefix`**: S3 prefix for uploaded files
 - **`parallelism`**: Load parallelism level - `LOW`, `MEDIUM`, `HIGH`, `OVERSUBSCRIBE` (default: `OVERSUBSCRIBE`)
-- **`monitor`**: Monitor load progress until completion (default: `true`)
+- **`monitor`**: Monitor load progress until completion (default: `false`)
 
 ## Command Line Override
 
