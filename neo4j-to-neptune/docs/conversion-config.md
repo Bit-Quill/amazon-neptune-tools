@@ -111,10 +111,10 @@ Transform vertex IDs using templates that can reference:
 | Placeholder | Description | Example Value |
 |-------------|-------------|---------------|
 | `{_id}` | Original Neo4j vertex ID | `"123"` |
-| `{_labels}` | Vertex labels (colon-separated → underscore-separated) | `"Person_Employee"` |
+| `{_labels}` | Original Neo4j Vertex labels | `"Person_Employee"` |
 | `{~id}` | Gremlin alias vertex ID | `"123"` |
-| `{~label}` | Gremlin alias vertex labels (colon-separated → underscore-separated) | `"Person_Employee"` |
-| `{property_name}` | Any vertex property from CSV | `"John"` (for name property) |
+| `{~label}` | Gremlin alias vertex labels | `"Person_Employee"` |
+| `{property_name}` | Any vertex property from CSV | `"John"` |
 
 **Examples:**
 

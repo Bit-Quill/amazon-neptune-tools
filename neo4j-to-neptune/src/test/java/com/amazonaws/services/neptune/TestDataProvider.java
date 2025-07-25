@@ -33,7 +33,7 @@ import com.amazonaws.services.neptune.util.CSVUtils;
 import com.amazonaws.services.neptune.util.NeptuneBulkLoader;
 
 import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.s3.S3AsyncClient;
+import software.amazon.awssdk.transfer.s3.S3TransferManager;
 
 /**
  * Test data provider utility class for Neptune bulk loader tests
@@ -108,18 +108,18 @@ public class TestDataProvider {
     }
 
     /**
-     * Creates a NeptuneBulkLoader with custom HttpClient and S3AsyncClient for testing
+     * Creates a NeptuneBulkLoader with custom HttpClient and S3TransferManager for testing
      * @param httpClient The HttpClient to use for HTTP requests
-     * @param s3AsyncClient The S3AsyncClient to use for S3 operations
+     * @param transferManager The S3TransferManager to use for S3 operations
      * @return NeptuneBulkLoader instance with the provided clients
      */
-    public static NeptuneBulkLoader createNeptuneBulkLoader(HttpClient httpClient, S3AsyncClient s3AsyncClient) {
+    public static NeptuneBulkLoader createNeptuneBulkLoader(HttpClient httpClient, S3TransferManager transferManager) {
         BulkLoadConfig bulkLoadConfig =
             createBulkLoadConfig(BUCKET, S3_PREFIX, NEPTUNE_ENDPOINT, IAM_ROLE_ARN, BULK_LOAD_PARALLELISM_MEDIUM, BULK_LOAD_MONITOR_FALSE);
         return new NeptuneBulkLoader(
             bulkLoadConfig,
             httpClient,
-            s3AsyncClient
+            transferManager
         );
     }
 

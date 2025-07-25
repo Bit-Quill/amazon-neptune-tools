@@ -15,11 +15,13 @@ package com.amazonaws.services.neptune.util;
 import com.amazonaws.services.neptune.TestDataProvider;
 import com.amazonaws.services.neptune.metadata.BulkLoadConfig;
 
-import software.amazon.awssdk.services.s3.S3AsyncClient;
+import software.amazon.awssdk.transfer.s3.S3TransferManager;
+import software.amazon.awssdk.transfer.s3.model.CompletedFileUpload;
+import software.amazon.awssdk.transfer.s3.model.FileUpload;
+import software.amazon.awssdk.transfer.s3.model.UploadFileRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.model.S3Exception;
-import software.amazon.awssdk.core.async.AsyncRequestBody;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -140,19 +142,27 @@ public class NeptuneBulkLoaderTest {
             .eTag("mock-etag-12345")
             .build();
 
-        // Create a CompletableFuture that completes successfully
-        CompletableFuture<PutObjectResponse> successFuture = CompletableFuture.completedFuture(putObjectResponse);
+        // Create a successful CompletedFileUpload
+        CompletedFileUpload completedUpload = mock(CompletedFileUpload.class);
+        when(completedUpload.response()).thenReturn(putObjectResponse);
 
-        // Mock the S3AsyncClient
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        // Create a CompletableFuture that completes successfully
+        CompletableFuture<CompletedFileUpload> successFuture = CompletableFuture.completedFuture(completedUpload);
+
+        // Mock the FileUpload
+        FileUpload mockFileUpload = mock(FileUpload.class);
+        when(mockFileUpload.completionFuture()).thenReturn(successFuture);
+
+        // Mock the S3TransferManager
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpClient mockHttpClient = mock(HttpClient.class);
 
-        // Mock the putObject method to return the successful future
-        when(mockS3AsyncClient.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
-            .thenReturn(successFuture);
+        // Mock the uploadFile method to return the successful FileUpload
+        when(mockTransferManager.uploadFile(any(UploadFileRequest.class)))
+            .thenReturn(mockFileUpload);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         try {
             CompletableFuture<Boolean> result = neptuneBulkLoader.uploadSingleFileAsync(
@@ -167,8 +177,8 @@ public class NeptuneBulkLoaderTest {
             Boolean uploadResult = result.get();
             assertTrue("Upload should be successful", uploadResult);
 
-            // Verify that the S3AsyncClient.putObject was called
-            verify(mockS3AsyncClient, times(1)).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+            // Verify that the S3TransferManager.uploadFile was called
+            verify(mockTransferManager, times(1)).uploadFile(any(UploadFileRequest.class));
 
             // Verify the output contains success message
             String error = errorStream.toString();
@@ -176,7 +186,7 @@ public class NeptuneBulkLoaderTest {
                 error.contains("Starting async upload"));
 
         } catch (Exception e) {
-            fail("Should not throw exception when S3AsyncClient is mocked successfully: " + e.getMessage());
+            fail("Should not throw exception when S3TransferManager is mocked successfully: " + e.getMessage());
         }
     }
 
@@ -186,7 +196,6 @@ public class NeptuneBulkLoaderTest {
         File testVerticiesFile = new File(testDir, TestDataProvider.VERTICIES_CSV);
         TestDataProvider.createMockVerticesFile(testDir, testVerticiesFile);
 
-
         // Mock S3Exception to be thrown
         S3Exception s3Exception = (S3Exception) S3Exception.builder()
             .message("Access Denied")
@@ -194,19 +203,23 @@ public class NeptuneBulkLoaderTest {
             .build();
 
         // Create a CompletableFuture that completes exceptionally with S3Exception
-        CompletableFuture<PutObjectResponse> failedFuture = new CompletableFuture<>();
+        CompletableFuture<CompletedFileUpload> failedFuture = new CompletableFuture<>();
         failedFuture.completeExceptionally(s3Exception);
 
-        // Mock the S3AsyncClient and HttpClient
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        // Mock the FileUpload
+        FileUpload mockFileUpload = mock(FileUpload.class);
+        when(mockFileUpload.completionFuture()).thenReturn(failedFuture);
+
+        // Mock the S3TransferManager and HttpClient
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpClient mockHttpClient = mock(HttpClient.class);
 
-        // Mock the putObject method to return the failed future
-        when(mockS3AsyncClient.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
-            .thenReturn(failedFuture);
+        // Mock the uploadFile method to return the failed FileUpload
+        when(mockTransferManager.uploadFile(any(UploadFileRequest.class)))
+            .thenReturn(mockFileUpload);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         try {
             CompletableFuture<Boolean> result = neptuneBulkLoader.uploadSingleFileAsync(
@@ -218,16 +231,15 @@ public class NeptuneBulkLoaderTest {
             Boolean uploadResult = result.get();
             assertFalse("Upload should fail and return false when S3Exception occurs", uploadResult);
 
-            // Verify that the S3AsyncClient.putObject was called
-            verify(mockS3AsyncClient, times(1)).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
-
+            // Verify that the S3TransferManager.uploadFile was called
+            verify(mockTransferManager, times(1)).uploadFile(any(UploadFileRequest.class));
 
             // Verify error stream contains the exception details
             String error = errorStream.toString();
             assertTrue("Should contain upload attempt message",
                 error.contains("Starting async upload"));
             assertTrue("Should contain error message about upload failure",
-                error.contains("Error uploading file") || error.contains("Access Denied"));
+                error.contains("Transfer Manager upload failed") || error.contains("Access Denied"));
 
         } catch (Exception e) {
             // If an exception is thrown instead of returning false, verify it's the S3Exception
@@ -239,8 +251,8 @@ public class NeptuneBulkLoaderTest {
             assertTrue("Should contain Access Denied message",
                 exceptionMessage.contains("Access Denied"));
 
-            // Verify that the S3AsyncClient.putObject was called
-            verify(mockS3AsyncClient, times(1)).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+            // Verify that the S3TransferManager.uploadFile was called
+            verify(mockTransferManager, times(1)).uploadFile(any(UploadFileRequest.class));
         }
     }
 
@@ -451,7 +463,7 @@ public class NeptuneBulkLoaderTest {
     public void testNeptuneConnectivitySuccess() throws Exception {
         // Mock HttpClient and HttpResponse
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         // Mock successful response
@@ -461,7 +473,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Test connectivity
         boolean result = neptuneBulkLoader.testNeptuneConnectivity();
@@ -480,7 +492,7 @@ public class NeptuneBulkLoaderTest {
     public void testNeptuneConnectivityUnhealthyStatus() throws Exception {
         // Mock HttpClient and HttpResponse
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         // Mock response with unhealthy status
@@ -490,7 +502,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Test connectivity - the RuntimeException is caught and method returns false
         boolean result = neptuneBulkLoader.testNeptuneConnectivity();
@@ -507,7 +519,7 @@ public class NeptuneBulkLoaderTest {
     public void testNeptuneConnectivityMissingStatus() throws Exception {
         // Mock HttpClient and HttpResponse
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         // Mock response without status field
@@ -517,7 +529,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Test connectivity - the RuntimeException is caught and method returns false
         boolean result = neptuneBulkLoader.testNeptuneConnectivity();
@@ -541,7 +553,7 @@ public class NeptuneBulkLoaderTest {
 
         // Mock HttpClient and HttpResponse
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         for (Object[] params : invalidStatusCodes) {
@@ -552,7 +564,7 @@ public class NeptuneBulkLoaderTest {
                 .thenReturn(mockResponse);
 
             // Create NeptuneBulkLoader with mock clients for each iteration
-            neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+            neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
             // Test connectivity
             boolean result = neptuneBulkLoader.testNeptuneConnectivity();
@@ -570,12 +582,12 @@ public class NeptuneBulkLoaderTest {
     public void testNeptuneConnectivityHttpException() throws Exception {
         // Mock HttpClient to throw exception
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         when(mockHttpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
             .thenThrow(new RuntimeException("Connection timeout"));
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Test connectivity
         boolean result = neptuneBulkLoader.testNeptuneConnectivity();
@@ -592,7 +604,7 @@ public class NeptuneBulkLoaderTest {
     public void testNeptuneConnectivityJsonParsingException() throws Exception {
         // Mock HttpClient and HttpResponse
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         // Mock response with invalid JSON
@@ -602,7 +614,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Test connectivity
         boolean result = neptuneBulkLoader.testNeptuneConnectivity();
@@ -619,7 +631,7 @@ public class NeptuneBulkLoaderTest {
     public void testNeptuneConnectivityEndpointConstruction() throws Exception {
         // Mock HttpClient and HttpResponse
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         when(mockResponse.statusCode()).thenReturn(200);
@@ -628,7 +640,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Test connectivity
         boolean result = neptuneBulkLoader.testNeptuneConnectivity();
@@ -656,8 +668,8 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader instance with mock HttpClient
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Call the protected method directly
         String result = neptuneBulkLoader.checkNeptuneBulkLoadStatus(TestDataProvider.LOAD_ID_0);
@@ -708,8 +720,8 @@ public class NeptuneBulkLoaderTest {
                 .thenReturn(mockResponse);
 
             // Create NeptuneBulkLoader instance with mock HttpClient
-            S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
-            NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+            S3TransferManager mockTransferManager = mock(S3TransferManager.class);
+            NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
             String result = neptuneBulkLoader.checkNeptuneBulkLoadStatus(TestDataProvider.LOAD_ID_0);
 
@@ -734,8 +746,8 @@ public class NeptuneBulkLoaderTest {
                 .thenReturn(mockResponse);
 
             // Create NeptuneBulkLoader instance with mock HttpClient
-            S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
-            NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+            S3TransferManager mockTransferManager = mock(S3TransferManager.class);
+            NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
             neptuneBulkLoader.checkNeptuneBulkLoadStatus(TestDataProvider.LOAD_ID_0);
         }
@@ -749,8 +761,8 @@ public class NeptuneBulkLoaderTest {
             .thenThrow(new RuntimeException("Network connection failed"));
 
         // Create NeptuneBulkLoader instance with mock HttpClient
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         neptuneBulkLoader.checkNeptuneBulkLoadStatus(TestDataProvider.LOAD_ID_0);
     }
@@ -767,8 +779,8 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader instance with mock HttpClient
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Call the protected method directly
         neptuneBulkLoader.checkNeptuneBulkLoadStatus(TestDataProvider.LOAD_ID_0);
@@ -807,7 +819,7 @@ public class NeptuneBulkLoaderTest {
     public void testMonitorLoadProgressCompletedStatus() throws Exception {
         // Mock HttpClient and HttpResponse for completed status
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         String completedResponse = "{\"status\":\"" + TestDataProvider.LOAD_COMPLETED + "\",\"loadId\":\"" + TestDataProvider.LOAD_ID_0 + "\"}";
@@ -817,7 +829,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Monitor load progress
         neptuneBulkLoader.monitorLoadProgress(TestDataProvider.LOAD_ID_0);
@@ -837,7 +849,7 @@ public class NeptuneBulkLoaderTest {
     public void testMonitorLoadProgressFailedStatus() throws Exception {
         // Mock HttpClient and HttpResponse for failed status
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         String failedResponse = "{\"status\":\"" + TestDataProvider.LOAD_FAILED + "\",\"loadId\":\"" + TestDataProvider.LOAD_ID_0 + "\",\"errorMessage\":\"Load failed due to invalid data\"}";
@@ -847,7 +859,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Monitor load progress
         neptuneBulkLoader.monitorLoadProgress(TestDataProvider.LOAD_ID_0);
@@ -869,7 +881,7 @@ public class NeptuneBulkLoaderTest {
     public void testMonitorLoadProgressInProgressThenCompleted() throws Exception {
         // Mock HttpClient and HttpResponse for in-progress then completed
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         String inProgressResponse = "{\"status\":\"" + TestDataProvider.LOAD_IN_PROGRESS + "\",\"loadId\":\"" + TestDataProvider.LOAD_ID_0 + "\"}";
@@ -884,7 +896,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Monitor load progress
         neptuneBulkLoader.monitorLoadProgress(TestDataProvider.LOAD_ID_0);
@@ -906,7 +918,7 @@ public class NeptuneBulkLoaderTest {
     public void testMonitorLoadProgressWithPayloadStructure() throws Exception {
         // Mock HttpClient and HttpResponse with payload structure
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         String payloadResponse = "{\"payload\":{\"overallStatus\":{\"status\":\"" + TestDataProvider.LOAD_COMPLETED + "\"}},\"loadId\":\"" + TestDataProvider.LOAD_ID_0 + "\"}";
@@ -916,7 +928,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Monitor load progress
         neptuneBulkLoader.monitorLoadProgress(TestDataProvider.LOAD_ID_0);
@@ -936,7 +948,7 @@ public class NeptuneBulkLoaderTest {
     public void testMonitorLoadProgressTimeout() throws Exception {
         // Mock HttpClient to always return in-progress status (will cause timeout)
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         String inProgressResponse = "{\"status\":\"" + TestDataProvider.LOAD_IN_PROGRESS + "\",\"loadId\":\"" + TestDataProvider.LOAD_ID_0 + "\"}";
@@ -946,7 +958,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Create a spy to override the sleep and maxAttempts behavior for faster testing
         NeptuneBulkLoader spyLoader = spy(neptuneBulkLoader);
@@ -1000,13 +1012,13 @@ public class NeptuneBulkLoaderTest {
     public void testMonitorLoadProgressHttpException() throws Exception {
         // Mock HttpClient to throw exception
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
 
         when(mockHttpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
             .thenThrow(new RuntimeException("Network connection failed"));
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Monitor load progress - should exit quickly due to exception
         neptuneBulkLoader.monitorLoadProgress(TestDataProvider.LOAD_ID_0);
@@ -1039,7 +1051,7 @@ public class NeptuneBulkLoaderTest {
 
             // Mock HttpClient and HttpResponse for each failure status
             HttpClient mockHttpClient = mock(HttpClient.class);
-            S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+            S3TransferManager mockTransferManager = mock(S3TransferManager.class);
             HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
             String failedResponse = "{\"status\":\"" + failureStatus + "\",\"loadId\":\"" + TestDataProvider.LOAD_ID_0 + "\",\"errorMessage\":\"Test error for " + failureStatus + "\"}";
@@ -1049,7 +1061,7 @@ public class NeptuneBulkLoaderTest {
                 .thenReturn(mockResponse);
 
             // Create NeptuneBulkLoader with mock clients
-            NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+            NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
             // Clear stream for each test iteration
             errorStream.reset();
@@ -1085,7 +1097,7 @@ public class NeptuneBulkLoaderTest {
         for (String completedStatus : completedStatuses) {
             // Mock HttpClient and HttpResponse for each completed status
             HttpClient mockHttpClient = mock(HttpClient.class);
-            S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+            S3TransferManager mockTransferManager = mock(S3TransferManager.class);
             HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
             String completedResponse = "{\"status\":\"" + completedStatus + "\",\"loadId\":\"" + TestDataProvider.LOAD_ID_0 + "\"}";
@@ -1095,7 +1107,7 @@ public class NeptuneBulkLoaderTest {
                 .thenReturn(mockResponse);
 
             // Create NeptuneBulkLoader with mock clients
-            NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+            NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
             // Clear stream for each test
             errorStream.reset();
@@ -1117,7 +1129,7 @@ public class NeptuneBulkLoaderTest {
     public void testMonitorLoadProgressNullStatusResponse() throws Exception {
         // Mock HttpClient to return error status first, then success
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         when(mockResponse.statusCode())
@@ -1128,7 +1140,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Monitor load progress (should handle null response then succeed)
         neptuneBulkLoader.monitorLoadProgress(TestDataProvider.LOAD_ID_0);
@@ -1138,7 +1150,7 @@ public class NeptuneBulkLoaderTest {
     public void testStartNeptuneBulkLoadSuccess() throws Exception {
         // Mock HttpClient and HttpResponse for successful bulk load start
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         // Mock connectivity test response (successful)
@@ -1154,7 +1166,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Start bulk load
         String result = neptuneBulkLoader.startNeptuneBulkLoad(TestDataProvider.CONVERT_CSV_TIMESTAMP);
@@ -1179,7 +1191,7 @@ public class NeptuneBulkLoaderTest {
     public void testStartNeptuneBulkLoadConnectivityFailure() throws Exception {
         // Mock HttpClient to fail connectivity test
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         // Mock connectivity test response (failure)
@@ -1189,7 +1201,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         try {
             neptuneBulkLoader.startNeptuneBulkLoad(TestDataProvider.CONVERT_CSV_TIMESTAMP);
@@ -1212,7 +1224,7 @@ public class NeptuneBulkLoaderTest {
     public void testStartNeptuneBulkLoadHttpError() throws Exception {
         // Mock HttpClient for successful connectivity but failed bulk load start
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         // Mock connectivity test response (successful)
@@ -1234,7 +1246,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Start bulk load - should throw RuntimeException due to HTTP errors after retries
         try {
@@ -1281,7 +1293,7 @@ public class NeptuneBulkLoaderTest {
     public void testStartNeptuneBulkLoadRetrySuccess() throws Exception {
         // Mock HttpClient for successful connectivity and bulk load after retry
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         // Mock connectivity test response (successful)
@@ -1301,7 +1313,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Start bulk load - should succeed after retry
         String result = neptuneBulkLoader.startNeptuneBulkLoad(TestDataProvider.CONVERT_CSV_TIMESTAMP);
@@ -1326,7 +1338,7 @@ public class NeptuneBulkLoaderTest {
     public void testStartNeptuneBulkLoadMaxRetrySuccess() throws Exception {
         // Mock HttpClient for successful connectivity and bulk load after retry
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         // Mock connectivity test response (successful)
@@ -1350,7 +1362,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Start bulk load - should succeed after retry
         String result = neptuneBulkLoader.startNeptuneBulkLoad(TestDataProvider.CONVERT_CSV_TIMESTAMP);
@@ -1375,7 +1387,7 @@ public class NeptuneBulkLoaderTest {
     public void testStartNeptuneBulkLoadMaxRetryFail() throws Exception {
         // Mock HttpClient for successful connectivity but failed bulk load retry
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         // Mock connectivity test response (successful)
@@ -1397,7 +1409,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Start bulk load - should throw RuntimeException after max retries
         try {
@@ -1446,7 +1458,7 @@ public class NeptuneBulkLoaderTest {
     public void testStartNeptuneBulkLoadInvalidJsonResponse() throws Exception {
         // Mock HttpClient for successful connectivity but invalid JSON response
         HttpClient mockHttpClient = mock(HttpClient.class);
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
 
         // Mock connectivity test response (successful)
@@ -1470,7 +1482,7 @@ public class NeptuneBulkLoaderTest {
             .thenReturn(mockResponse);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         // Start bulk load - should throw RuntimeException due to JSON parsing errors after retries
         try {
@@ -1521,19 +1533,27 @@ public class NeptuneBulkLoaderTest {
             .eTag("mock-etag-12345")
             .build();
 
-        // Create a CompletableFuture that completes successfully
-        CompletableFuture<PutObjectResponse> successFuture = CompletableFuture.completedFuture(putObjectResponse);
+        // Create a successful CompletedFileUpload
+        CompletedFileUpload completedUpload = mock(CompletedFileUpload.class);
+        when(completedUpload.response()).thenReturn(putObjectResponse);
 
-        // Mock the S3AsyncClient
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        // Create a CompletableFuture that completes successfully
+        CompletableFuture<CompletedFileUpload> successFuture = CompletableFuture.completedFuture(completedUpload);
+
+        // Mock the FileUpload
+        FileUpload mockFileUpload = mock(FileUpload.class);
+        when(mockFileUpload.completionFuture()).thenReturn(successFuture);
+
+        // Mock the S3TransferManager
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpClient mockHttpClient = mock(HttpClient.class);
 
-        // Mock the putObject method to return the successful future
-        when(mockS3AsyncClient.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
-            .thenReturn(successFuture);
+        // Mock the uploadFile method to return the successful FileUpload
+        when(mockTransferManager.uploadFile(any(UploadFileRequest.class)))
+            .thenReturn(mockFileUpload);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         try {
             CompletableFuture<Boolean> result = neptuneBulkLoader.uploadFileAsync(
@@ -1548,18 +1568,18 @@ public class NeptuneBulkLoaderTest {
             Boolean uploadResult = result.get();
             assertTrue("Upload should be successful", uploadResult);
 
-            // Verify that the S3AsyncClient.putObject was called for both CSV files
-            verify(mockS3AsyncClient, times(2)).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+            // Verify that the S3TransferManager.uploadFile was called for both CSV files
+            verify(mockTransferManager, times(2)).uploadFile(any(UploadFileRequest.class));
 
             // Verify the output contains success message
             String error = errorStream.toString();
             assertTrue("Should contain upload attempt message",
-                error.contains("Starting async upload"));
+                error.contains("Starting sequential upload"));
             assertTrue("Should contain success message",
-                error.contains("Successfully uploaded 2 files"));
+                error.contains("Successfully uploaded all 2 files"));
 
         } catch (Exception e) {
-            fail("Should not throw exception when S3AsyncClient is mocked successfully: " + e.getMessage());
+            fail("Should not throw exception when S3TransferManager is mocked successfully: " + e.getMessage());
         }
     }
 
@@ -1575,19 +1595,23 @@ public class NeptuneBulkLoaderTest {
             .build();
 
         // Create a CompletableFuture that completes exceptionally with S3Exception
-        CompletableFuture<PutObjectResponse> failedFuture = new CompletableFuture<>();
+        CompletableFuture<CompletedFileUpload> failedFuture = new CompletableFuture<>();
         failedFuture.completeExceptionally(s3Exception);
 
-        // Mock the S3AsyncClient and HttpClient
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        // Mock the FileUpload
+        FileUpload mockFileUpload = mock(FileUpload.class);
+        when(mockFileUpload.completionFuture()).thenReturn(failedFuture);
+
+        // Mock the S3TransferManager and HttpClient
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpClient mockHttpClient = mock(HttpClient.class);
 
-        // Mock the putObject method to return the failed future
-        when(mockS3AsyncClient.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
-            .thenReturn(failedFuture);
+        // Mock the uploadFile method to return the failed FileUpload
+        when(mockTransferManager.uploadFile(any(UploadFileRequest.class)))
+            .thenReturn(mockFileUpload);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         try {
             CompletableFuture<Boolean> result = neptuneBulkLoader.uploadFileAsync(
@@ -1599,15 +1623,15 @@ public class NeptuneBulkLoaderTest {
             Boolean uploadResult = result.get();
             assertFalse("Upload should fail and return false when S3Exception occurs", uploadResult);
 
-            // Verify that the S3AsyncClient.putObject was called for both files
-            verify(mockS3AsyncClient, times(2)).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+            // Verify that the S3TransferManager.uploadFile was called (sequential stops on first failure)
+            verify(mockTransferManager, times(1)).uploadFile(any(UploadFileRequest.class));
 
             // Verify error stream contains the exception details
             String error = errorStream.toString();
             assertTrue("Should contain upload attempt message",
-                error.contains("Starting async upload"));
+                error.contains("Starting sequential upload"));
             assertTrue("Should contain error message about upload failure",
-                error.contains("S3 error uploading file") || error.contains("Access Denied"));
+                error.contains("Transfer Manager upload failed") || error.contains("Access Denied"));
 
         } catch (Exception e) {
             fail("Should not throw exception, should return false instead: " + e.getMessage());
@@ -1627,11 +1651,11 @@ public class NeptuneBulkLoaderTest {
         // Don't create any CSV files - directory is empty
 
         // Mock the S3AsyncClient and HttpClient
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpClient mockHttpClient = mock(HttpClient.class);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         CompletableFuture<Boolean> result = neptuneBulkLoader.uploadFileAsync(
             testDir.getAbsolutePath(),
@@ -1648,7 +1672,7 @@ public class NeptuneBulkLoaderTest {
             error.contains("No files with correct extension were found in "));
 
         // Verify no S3 calls were made
-        verify(mockS3AsyncClient, never()).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+        verify(mockTransferManager, never()).uploadFile(any(UploadFileRequest.class));
     }
 
     @Test
@@ -1660,26 +1684,37 @@ public class NeptuneBulkLoaderTest {
         PutObjectResponse successResponse = PutObjectResponse.builder()
             .eTag("mock-etag-success")
             .build();
-        CompletableFuture<PutObjectResponse> successFuture = CompletableFuture.completedFuture(successResponse);
+        
+        // Create successful CompletedFileUpload
+        CompletedFileUpload successCompletedUpload = mock(CompletedFileUpload.class);
+        when(successCompletedUpload.response()).thenReturn(successResponse);
+        CompletableFuture<CompletedFileUpload> successFuture = CompletableFuture.completedFuture(successCompletedUpload);
 
         S3Exception s3Exception = (S3Exception) S3Exception.builder()
             .message("Access Denied")
             .statusCode(403)
             .build();
-        CompletableFuture<PutObjectResponse> failedFuture = new CompletableFuture<>();
+        CompletableFuture<CompletedFileUpload> failedFuture = new CompletableFuture<>();
         failedFuture.completeExceptionally(s3Exception);
 
-        // Mock the S3AsyncClient and HttpClient
-        S3AsyncClient mockS3AsyncClient = mock(S3AsyncClient.class);
+        // Mock FileUpload objects
+        FileUpload successFileUpload = mock(FileUpload.class);
+        when(successFileUpload.completionFuture()).thenReturn(successFuture);
+        
+        FileUpload failedFileUpload = mock(FileUpload.class);
+        when(failedFileUpload.completionFuture()).thenReturn(failedFuture);
+
+        // Mock the S3TransferManager and HttpClient
+        S3TransferManager mockTransferManager = mock(S3TransferManager.class);
         HttpClient mockHttpClient = mock(HttpClient.class);
 
         // Mock first call to succeed, second to fail
-        when(mockS3AsyncClient.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
-            .thenReturn(successFuture)
-            .thenReturn(failedFuture);
+        when(mockTransferManager.uploadFile(any(UploadFileRequest.class)))
+            .thenReturn(successFileUpload)
+            .thenReturn(failedFileUpload);
 
         // Create NeptuneBulkLoader with mock clients
-        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockS3AsyncClient);
+        NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         CompletableFuture<Boolean> result = neptuneBulkLoader.uploadFileAsync(
             testDir.getAbsolutePath(),
@@ -1690,13 +1725,13 @@ public class NeptuneBulkLoaderTest {
         Boolean uploadResult = result.get();
         assertFalse("Upload should return false when some files fail", uploadResult);
 
-        // Verify both S3 calls were made
-        verify(mockS3AsyncClient, times(2)).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+        // Verify both S3 calls were made (sequential upload tries both files)
+        verify(mockTransferManager, times(2)).uploadFile(any(UploadFileRequest.class));
 
         // Verify error message
         String error = errorStream.toString();
         assertTrue("Should contain partial failure message",
-            error.contains("Failed uploading file(s) from"));
+            error.contains("Failed uploading file(s)") || error.contains("Transfer Manager upload failed"));
     }
 
 }
