@@ -37,8 +37,6 @@ public class BulkLoadConfigTest {
             writer.write("iam-role-arn: \"" + TestDataProvider.IAM_ROLE_ARN + "\"\n");
             writer.write("parallelism: \"" + TestDataProvider.BULK_LOAD_PARALLELISM_LOW + "\"\n");
             writer.write("monitor: " + TestDataProvider.BOOLEAN_TRUE + "\n");
-            writer.write("compress: " + TestDataProvider.BOOLEAN_TRUE + "\n");
-            writer.write("compress-delete: " + TestDataProvider.BOOLEAN_FALSE + "\n");
         }
 
         BulkLoadConfig config = BulkLoadConfig.fromFile(tempFile);
@@ -200,7 +198,7 @@ public class BulkLoadConfigTest {
             .withIamRoleArn(TestDataProvider.IAM_ROLE_ARN);
 
         try {
-            BulkLoadConfig.validateBulkLoadConfigFile(validConfig);
+            BulkLoadConfig.validateBulkLoadConfigValues(validConfig);
         } catch (Exception e) {
             fail("Valid config should not throw exception: " + e.getMessage());
         }
@@ -212,7 +210,7 @@ public class BulkLoadConfigTest {
         BulkLoadConfig emptyConfig = new BulkLoadConfig();
 
         try {
-            BulkLoadConfig.validateBulkLoadConfigFile(emptyConfig);
+            BulkLoadConfig.validateBulkLoadConfigValues(emptyConfig);
             fail("Should throw exception for missing required fields");
         } catch (IllegalArgumentException e) {
             // Verify that the error message contains all missing fields
@@ -234,7 +232,7 @@ public class BulkLoadConfigTest {
             .withIamRoleArn(TestDataProvider.IAM_ROLE_ARN);
 
         try {
-            BulkLoadConfig.validateBulkLoadConfigFile(missingBucket);
+            BulkLoadConfig.validateBulkLoadConfigValues(missingBucket);
             fail("Should throw exception for missing bucket name");
         } catch (IllegalArgumentException e) {
             assertTrue("Error message should mention S3 bucket name",
@@ -254,7 +252,7 @@ public class BulkLoadConfigTest {
             .withIamRoleArn(TestDataProvider.IAM_ROLE_ARN);
 
         try {
-            BulkLoadConfig.validateBulkLoadConfigFile(missingEndpoint);
+            BulkLoadConfig.validateBulkLoadConfigValues(missingEndpoint);
             fail("Should throw exception for missing Neptune endpoint");
         } catch (IllegalArgumentException e) {
             assertTrue("Error message should mention Neptune endpoint",
@@ -274,7 +272,7 @@ public class BulkLoadConfigTest {
             .withNeptuneEndpoint(TestDataProvider.NEPTUNE_ENDPOINT);
 
         try {
-            BulkLoadConfig.validateBulkLoadConfigFile(missingRole);
+            BulkLoadConfig.validateBulkLoadConfigValues(missingRole);
             fail("Should throw exception for missing IAM role ARN");
         } catch (IllegalArgumentException e) {
             assertTrue("Error message should mention IAM role ARN",
@@ -298,7 +296,7 @@ public class BulkLoadConfigTest {
         invalidParallelism.setParallelism("INVALID_VALUE");
 
         try {
-            BulkLoadConfig.validateBulkLoadConfigFile(invalidParallelism);
+            BulkLoadConfig.validateBulkLoadConfigValues(invalidParallelism);
             fail("Should throw exception for invalid parallelism");
         } catch (IllegalArgumentException e) {
             assertTrue("Error message should mention valid parallelism options",
@@ -319,7 +317,7 @@ public class BulkLoadConfigTest {
 
         // This should not throw an exception since we now allow null parallelism
         try {
-            BulkLoadConfig.validateBulkLoadConfigFile(nullParallelism);
+            BulkLoadConfig.validateBulkLoadConfigValues(nullParallelism);
         } catch (Exception e) {
             fail("Should not throw exception for null parallelism: " + e.getMessage());
         }
@@ -352,5 +350,42 @@ public class BulkLoadConfigTest {
         assertTrue(toString.contains("BulkLoadConfig"));
         assertTrue(toString.contains(TestDataProvider.BUCKET));
         assertTrue(toString.contains(TestDataProvider.NEPTUNE_ENDPOINT));
+    }
+
+    @Test
+    public void testS3BucketNameValidation() {
+        String invalidPrefixSuffix = "S3 bucket name has an invalid prefix or suffix";
+        String expectedIllegalArgumentException = "Expected IllegalArgumentException";
+        Object[][] validationTests = {
+            {"ab", expectedIllegalArgumentException, "S3 bucket name must be between 3 and 63 characters"},
+            {"a".repeat(64), expectedIllegalArgumentException, "S3 bucket name must be between 3 and 63 characters"},
+            {"My-Bucket", expectedIllegalArgumentException, "S3 bucket name must only contain lowercase letters, numbers, hyphens, and periods"},
+            {"$$$", expectedIllegalArgumentException, "S3 bucket name must only contain lowercase letters, numbers, hyphens, and periods"},
+            {"-bucket", expectedIllegalArgumentException, "S3 bucket name must begin and end with a letter or number"},
+            {"bucket-", expectedIllegalArgumentException, "S3 bucket name must begin and end with a letter or number"},
+            {"my..bucket", expectedIllegalArgumentException, "S3 bucket name cannot contain consecutive periods"},
+            {"192.168.1.1", expectedIllegalArgumentException, "S3 bucket name cannot be formatted as an IP address"},
+            {"xn--bucket", expectedIllegalArgumentException, invalidPrefixSuffix},
+            {"sthree-bucket", expectedIllegalArgumentException, invalidPrefixSuffix},
+            {"amzn-s3-demo-bucket", expectedIllegalArgumentException, invalidPrefixSuffix},
+            {"bucket-s3alias", expectedIllegalArgumentException, invalidPrefixSuffix},
+            {"bucket--ol-s3", expectedIllegalArgumentException, invalidPrefixSuffix},
+            {"bucket.mrap", expectedIllegalArgumentException, invalidPrefixSuffix},
+            {"bucket--x-s3", expectedIllegalArgumentException, invalidPrefixSuffix},
+            {"bucket--table-s3", expectedIllegalArgumentException, invalidPrefixSuffix}
+        };
+
+        BulkLoadConfig config = new BulkLoadConfig()
+            .withNeptuneEndpoint(TestDataProvider.NEPTUNE_ENDPOINT)
+            .withIamRoleArn(TestDataProvider.IAM_ROLE_ARN);;
+        for (Object[] params : validationTests) {
+            try {
+                config.setBucketName(params[0].toString());
+                BulkLoadConfig.validateBulkLoadConfigValues(config);
+                fail(params[1].toString());
+            } catch (IllegalArgumentException e) {
+                assertEquals(params[2].toString(), e.getMessage());
+            }
+        }
     }
 }

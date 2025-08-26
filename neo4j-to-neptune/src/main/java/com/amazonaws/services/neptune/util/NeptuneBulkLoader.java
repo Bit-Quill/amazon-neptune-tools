@@ -19,7 +19,6 @@ import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.transfer.s3.S3TransferManager;
 import software.amazon.awssdk.transfer.s3.model.UploadRequest;
@@ -200,14 +199,11 @@ public class NeptuneBulkLoader implements AutoCloseable {
             .orElse("") + convertCsvTimeStamp;
 
         // Upload all files from the directory
-        CompletableFuture<Boolean> uploadFuture = uploadFileAsync(filePath, s3PrefixWithTimeStamp);
-
-        // Wait for upload to complete - this will throw if compression or upload failed
-        boolean uploadSuccess = uploadFuture.get();
-
-        if (!uploadSuccess) {
+        try {
+            uploadFileAsync(filePath, s3PrefixWithTimeStamp);
+        } catch (Exception e) {
             System.err.println("CSV file uploads failed from directory: " + filePath);
-            throw new RuntimeException("One or more CSV uploads failed.");
+            throw new RuntimeException("One or more CSV uploads failed.", e);
         }
 
         String uploadS3Uri = "s3://" + bucketName + "/" + s3PrefixWithTimeStamp+ "/";
@@ -218,7 +214,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
     /**
      * Upload all files from a directory to S3 sequentially to avoid connection pool exhaustion
      */
-    protected CompletableFuture<Boolean> uploadFileAsync(String directoryPath, String s3Prefix) throws Exception {
+    protected void uploadFileAsync(String directoryPath, String s3Prefix) throws Exception {
         // Create a File object to check existence
         File directory = new File(directoryPath);
 
@@ -234,51 +230,43 @@ public class NeptuneBulkLoader implements AutoCloseable {
 
         if (csvFiles == null || csvFiles.length == 0) {
             System.err.println("No files with correct extension were found in " + directoryPath);
-            return CompletableFuture.completedFuture(false);
+            throw new RuntimeException("No CSV files found in directory: " + directoryPath);
         }
 
         // Upload files sequentially to avoid connection pool exhaustion
-        return uploadFilesSequentially(csvFiles, s3Prefix, 0);
+        uploadFilesSequentially(csvFiles, s3Prefix);
+        System.err.println("Successfully uploaded all " + csvFiles.length + " files from " + directoryPath);
     }
 
     /**
      * Upload files sequentially (one at a time) to avoid overwhelming the connection pool
      */
-    private CompletableFuture<Boolean> uploadFilesSequentially(File[] files, String s3Prefix, int index) {
-        if (index >= files.length) {
-            System.err.println("Successfully uploaded all " + files.length + " files sequentially");
-            return CompletableFuture.completedFuture(true);
-        }
+    private void uploadFilesSequentially(File[] files, String s3Prefix) throws Exception {
+        for (int index = 0; index < files.length; index++) {
+            File currentFile = files[index];
+            String csvFilePath = s3Prefix + "/" + currentFile.getName();
 
-        File currentFile = files[index];
-        String csvFilePath = s3Prefix + "/" + currentFile.getName();
+            System.err.println("Uploading file " + (index + 1) + " of " + files.length + ": " + currentFile.getName());
 
-        System.err.println("Uploading file " + (index + 1) + " of " + files.length + ": " + currentFile.getName());
+            try {
+                // Wait for upload to complete
+                Boolean success = uploadSingleFileAsync(currentFile.getAbsolutePath(), csvFilePath).get();
 
-        try {
-            CompletableFuture<Boolean> currentUpload =
-                uploadSingleFileAsync(currentFile.getAbsolutePath(), csvFilePath);
-
-            return currentUpload.thenCompose(success -> {
                 if (!success) {
                     System.err.println("Failed to upload " + currentFile.getName() + ", stopping sequential upload");
-                    return CompletableFuture.completedFuture(false);
+                    throw new RuntimeException("Upload failed for file: " + currentFile.getName());
                 }
 
                 System.err.println("Successfully uploaded " + currentFile.getName() +
                     " (" + (index + 1) + "/" + files.length + ")");
 
-                // Upload next file
-                return uploadFilesSequentially(files, s3Prefix, index + 1);
-            });
-
-        } catch (Exception e) {
-            logUploadError(currentFile.getAbsolutePath(), e);
-            // Convert to failed CompletableFuture to preserve async chain and fail-fast behavior
-            CompletableFuture<Boolean> failedFuture = new CompletableFuture<>();
-            failedFuture.completeExceptionally(e);
-            return failedFuture;
+            } catch (Exception e) {
+                logUploadError(currentFile.getAbsolutePath(), e);
+                throw new RuntimeException("Exception during upload for file: " + currentFile.getName(), e);
+            }
         }
+
+        System.err.println("Successfully uploaded all " + files.length + " files sequentially");
     }
 
     /**
@@ -296,9 +284,10 @@ public class NeptuneBulkLoader implements AutoCloseable {
         System.err.println("File size: " + Utils.formatFileSize(localFile.length()));
 
         ExecutorService streamExecutor = Executors.newSingleThreadExecutor();
-        try (PipedOutputStream pipedOut = new PipedOutputStream();
-             PipedInputStream pipedIn = new PipedInputStream(pipedOut)) {
+        PipedOutputStream pipedOut = new PipedOutputStream();
+        PipedInputStream pipedIn = new PipedInputStream(pipedOut);
 
+        try {
             CompletableFuture<Void> compressionFuture = startCompressionTask(localFile, pipedOut);
             UploadRequest uploadRequest = createUploadRequest(s3Key, pipedIn, streamExecutor);
 
@@ -323,9 +312,13 @@ public class NeptuneBulkLoader implements AutoCloseable {
                     }
                 })
                 .whenComplete((result, throwable) -> {
-                    // Always shutdown the executor service
-                    streamExecutor.shutdown();
+                    closeStreams(streamExecutor, pipedOut, pipedIn);
                 });
+
+        } catch (Exception e) {
+            // Cleanup for setup failures
+            closeStreams(streamExecutor, pipedOut, pipedIn);
+            throw e;
         }
     }
 
@@ -338,12 +331,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
                  FileInputStream fis = new FileInputStream(localFile);
                  BufferedInputStream fileIn = new BufferedInputStream(fis)) {
 
-                // Use same buffer size as GzipCompressUtils for consistency
-                byte[] buffer = new byte[8192];
-                int bytesRead;
-                while ((bytesRead = fileIn.read(buffer)) != -1) {
-                    gzipOut.write(buffer, 0, bytesRead);
-                }
+                fileIn.transferTo(gzipOut);
                 gzipOut.finish();
 
             } catch (IOException e) {
@@ -357,7 +345,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
      */
     private UploadRequest createUploadRequest(String s3Key, PipedInputStream pipedIn, ExecutorService streamExecutor) {
         return UploadRequest.builder()
-            .putObjectRequest(PutObjectRequest.builder()
+            .putObjectRequest(putBuilder -> putBuilder
                 .bucket(bucketName)
                 .key(s3Key)
                 .contentType("application/gzip")
@@ -384,6 +372,21 @@ public class NeptuneBulkLoader implements AutoCloseable {
             System.err.println("S3 error code: " + s3Exception.awsErrorDetails().errorCode());
             System.err.println("S3 error message: " + s3Exception.awsErrorDetails().errorMessage());
             System.err.println("S3 status code: " + s3Exception.statusCode());
+        }
+    }
+
+
+    /**
+     * Close piped streams and shutdown executor service
+     */
+    private void closeStreams(ExecutorService streamExecutor, PipedOutputStream pipedOut, PipedInputStream pipedIn) {
+        streamExecutor.shutdown();
+        try {
+            pipedIn.close();
+            pipedOut.close();
+        } catch (IOException e) {
+            // Log but don't fail on cleanup
+            System.err.println("Warning: Failed to close piped streams: " + e.getMessage());
         }
     }
 
@@ -458,15 +461,15 @@ public class NeptuneBulkLoader implements AutoCloseable {
 
     private String createRequestBody(String s3SourceUri) {
         return String.format(
-            "{\n" +
-            "  \"source\": \"%s\",\n" +
-            "  \"format\": \"csv\",\n" +
-            "  \"iamRoleArn\": \"%s\",\n" +
-            "  \"region\": \"%s\",\n" +
-            "  \"failOnError\": \"FALSE\",\n" +
-            "  \"parallelism\": \"%s\",\n" +
-            "  \"updateSingleCardinalityProperties\": \"FALSE\",\n" +
-            "  \"queueRequest\": \"TRUE\"\n" +
+            "{%n" +
+            "  \"source\": \"%s\",%n" +
+            "  \"format\": \"csv\",%n" +
+            "  \"iamRoleArn\": \"%s\",%n" +
+            "  \"region\": \"%s\",%n" +
+            "  \"failOnError\": \"FALSE\",%n" +
+            "  \"parallelism\": \"%s\",%n" +
+            "  \"updateSingleCardinalityProperties\": \"FALSE\",%n" +
+            "  \"queueRequest\": \"TRUE\"%n" +
             "}",
             s3SourceUri, iamRoleArn, region, parallelism
         );

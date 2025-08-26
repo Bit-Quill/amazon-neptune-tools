@@ -315,9 +315,8 @@ public class NeptuneBulkLoaderTest {
 
         NeptuneBulkLoader spyLoader = spy(TestDataProvider.createNeptuneBulkLoader());
 
-        // Mock uploadFileAsync call to return successful future
-        CompletableFuture<Boolean> successFuture = CompletableFuture.completedFuture(true);
-        doReturn(successFuture).when(spyLoader).uploadFileAsync(anyString(), anyString());
+        // Mock uploadFileAsync to succeed (void method)
+        doNothing().when(spyLoader).uploadFileAsync(anyString(), anyString());
 
         // Test upload
         spyLoader.uploadCsvFilesToS3(testDir.getAbsolutePath());
@@ -422,10 +421,8 @@ public class NeptuneBulkLoaderTest {
 
         NeptuneBulkLoader spyLoader = spy(TestDataProvider.createNeptuneBulkLoader());
 
-        // Mock uploadFileAsync to throw an exception
-        CompletableFuture<Boolean> exceptionFuture = new CompletableFuture<>();
-        exceptionFuture.completeExceptionally(new RuntimeException("S3 connection failed"));
-        doReturn(exceptionFuture).when(spyLoader).uploadFileAsync(anyString(), anyString());
+        // Mock uploadFileAsync to throw an exception (void method)
+        doThrow(new RuntimeException("S3 connection failed")).when(spyLoader).uploadFileAsync(anyString(), anyString());
 
         try {
             spyLoader.uploadCsvFilesToS3(testDir.getAbsolutePath());
@@ -445,8 +442,8 @@ public class NeptuneBulkLoaderTest {
 
         NeptuneBulkLoader spyLoader = spy(TestDataProvider.createNeptuneBulkLoader());
 
-        CompletableFuture<Boolean> successFuture = CompletableFuture.completedFuture(true);
-        doReturn(successFuture).when(spyLoader).uploadFileAsync(anyString(), anyString());
+        // Mock uploadFileAsync to succeed (void method)
+        doNothing().when(spyLoader).uploadFileAsync(anyString(), anyString());
 
         // Test upload
         spyLoader.uploadCsvFilesToS3(testDir.getAbsolutePath());
@@ -469,9 +466,8 @@ public class NeptuneBulkLoaderTest {
 
         NeptuneBulkLoader spyLoader = spy(TestDataProvider.createNeptuneBulkLoader());
 
-        // Mock uploadFileAsync to return failure (directory-based approach)
-        CompletableFuture<Boolean> failureFuture = CompletableFuture.completedFuture(false);
-        doReturn(failureFuture).when(spyLoader).uploadFileAsync(anyString(), anyString());
+        // Mock uploadFileAsync to throw exception (void method)
+        doThrow(new RuntimeException("Upload failed")).when(spyLoader).uploadFileAsync(anyString(), anyString());
 
         try {
             spyLoader.uploadCsvFilesToS3(testDir.getAbsolutePath());
@@ -1570,17 +1566,14 @@ public class NeptuneBulkLoaderTest {
         doReturn(successFuture).when(spyLoader).uploadSingleFileAsync(anyString(), anyString());
 
         try {
-            CompletableFuture<Boolean> result = spyLoader.uploadFileAsync(
+            // Call uploadFileAsync (now void method)
+            spyLoader.uploadFileAsync(
                 testDir.getAbsolutePath(),
                 TestDataProvider.S3_PREFIX + "/test-upload"
             );
 
-            // The method should return a CompletableFuture
-            assertNotNull("uploadFileAsync should return a CompletableFuture", result);
-
-            // Wait for the result and verify it's true
-            Boolean uploadResult = result.get();
-            assertTrue("Upload should be successful", uploadResult);
+            // Verify the method was called
+            verify(spyLoader, times(1)).uploadFileAsync(anyString(), anyString());
 
             // Verify that uploadSingleFileAsync was called for both CSV files
             verify(spyLoader, times(2)).uploadSingleFileAsync(anyString(), anyString());
@@ -1617,13 +1610,12 @@ public class NeptuneBulkLoaderTest {
         doReturn(failedFuture).when(spyLoader).uploadSingleFileAsync(anyString(), anyString());
 
         try {
-            CompletableFuture<Boolean> result = spyLoader.uploadFileAsync(
+            // Call uploadFileAsync (now void method) - should throw exception
+            spyLoader.uploadFileAsync(
                 testDir.getAbsolutePath(),
                 TestDataProvider.S3_PREFIX + "/test-upload"
             );
 
-            // Should throw exception due to our fail-fast behavior
-            result.get();
             fail("Should have thrown exception due to upload failure");
 
         } catch (Exception e) {
@@ -1654,21 +1646,20 @@ public class NeptuneBulkLoaderTest {
         // Create NeptuneBulkLoader
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mock(HttpClient.class), mock(S3TransferManager.class));
 
-        CompletableFuture<Boolean> result = neptuneBulkLoader.uploadFileAsync(
-            testDir.getAbsolutePath(),
-            TestDataProvider.S3_PREFIX
-        );
+        try {
+            // Call uploadFileAsync (now void method) - should throw exception for empty directory
+            neptuneBulkLoader.uploadFileAsync(
+                testDir.getAbsolutePath(),
+                TestDataProvider.S3_PREFIX
+            );
 
-        // Should return false for empty directory
-        Boolean uploadResult = result.get();
-        assertFalse("Upload should return false for empty directory", uploadResult);
+            fail("Should have thrown exception for empty directory");
 
-        // Verify error message
-        String error = errorStream.toString();
-        assertTrue("Should contain files not found message",
-            error.contains("No files with correct extension were found in "));
-
-        // No need to verify S3 calls since no files are found to upload
+        } catch (RuntimeException e) {
+            // Verify error message
+            assertTrue("Should contain no CSV files message",
+                e.getMessage().contains("No CSV files found in directory"));
+        }
     }
 
     @Test
@@ -1695,13 +1686,12 @@ public class NeptuneBulkLoaderTest {
             .when(spyLoader).uploadSingleFileAsync(anyString(), anyString());
 
         try {
-            CompletableFuture<Boolean> result = spyLoader.uploadFileAsync(
+            // Call uploadFileAsync (now void method) - should throw exception on second file
+            spyLoader.uploadFileAsync(
                 testDir.getAbsolutePath(),
                 TestDataProvider.S3_PREFIX + "/test-upload"
             );
 
-            // Should throw exception due to fail-fast behavior on second file
-            result.get();
             fail("Should have thrown exception due to second file failure");
 
         } catch (Exception e) {

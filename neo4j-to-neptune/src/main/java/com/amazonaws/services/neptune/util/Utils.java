@@ -13,6 +13,7 @@ permissions and limitations under the License.
 package com.amazonaws.services.neptune.util;
 
 public class Utils {
+    private Utils() {}
     /**
      * Format file size for display
      */
