@@ -214,7 +214,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
     /**
      * Upload all files from a directory to S3 sequentially to avoid connection pool exhaustion
      */
-    protected void uploadFileAsync(String directoryPath, String s3Prefix) throws Exception {
+    protected void uploadFilesAsync(String directoryPath, String s3Prefix) throws Exception {
         // Create a File object to check existence
         File directory = new File(directoryPath);
 
@@ -241,7 +241,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
     /**
      * Upload files sequentially (one at a time) to avoid overwhelming the connection pool
      */
-    private void uploadFilesSequentially(File[] files, String s3Prefix) throws Exception {
+    private void uploadFilesSequentially(File[] files, String s3Prefix) {
         for (int index = 0; index < files.length; index++) {
             File currentFile = files[index];
             String csvFilePath = s3Prefix + "/" + currentFile.getName();
