@@ -200,7 +200,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
 
         // Upload all files from the directory
         try {
-            uploadFileAsync(filePath, s3PrefixWithTimeStamp);
+            uploadFilesInDirectory(filePath, s3PrefixWithTimeStamp);
         } catch (Exception e) {
             System.err.println("CSV file uploads failed from directory: " + filePath);
             throw new RuntimeException("One or more CSV uploads failed.", e);
@@ -214,7 +214,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
     /**
      * Upload all files from a directory to S3 sequentially to avoid connection pool exhaustion
      */
-    protected void uploadFilesAsync(String directoryPath, String s3Prefix) throws Exception {
+    protected void uploadFilesInDirectory(String directoryPath, String s3Prefix) throws Exception {
         // Create a File object to check existence
         File directory = new File(directoryPath);
 
@@ -250,7 +250,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
 
             try {
                 // Wait for upload to complete
-                Boolean success = uploadSingleFileAsync(currentFile.getAbsolutePath(), csvFilePath).get();
+                boolean success = uploadFileWithInflightCompression(currentFile.getAbsolutePath(), csvFilePath).get();
 
                 if (!success) {
                     System.err.println("Failed to upload " + currentFile.getName() + ", stopping sequential upload");
@@ -270,9 +270,9 @@ public class NeptuneBulkLoader implements AutoCloseable {
     }
 
     /**
-     * Upload a single CSV file to S3 asynchronously using S3TransferManager with in-flight compression
+     * Upload a single CSV file to S3 using S3TransferManager with in-flight compression
      */
-    protected CompletableFuture<Boolean> uploadSingleFileAsync(String localFilePath, String s3Prefix) throws Exception {
+    protected CompletableFuture<Boolean> uploadFileWithInflightCompression(String localFilePath, String s3Prefix) throws Exception {
         File localFile = new File(localFilePath);
         if (!localFile.exists() || !localFile.isFile()) {
             throw new IllegalStateException("File does not exist: " + localFilePath);
@@ -280,7 +280,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
 
         String s3Key = s3Prefix + ".gz";
         String s3SourceUri = "s3://" + bucketName + "/" + s3Key;
-        System.err.println("Starting async upload of " + localFilePath + " to " + s3SourceUri);
+        System.err.println("Starting upload with compression of " + localFilePath + " to " + s3SourceUri);
         System.err.println("File size: " + Utils.formatFileSize(localFile.length()));
 
         ExecutorService streamExecutor = Executors.newSingleThreadExecutor();
@@ -291,7 +291,7 @@ public class NeptuneBulkLoader implements AutoCloseable {
             CompletableFuture<Void> compressionFuture = startCompressionTask(localFile, pipedOut);
             UploadRequest uploadRequest = createUploadRequest(s3Key, pipedIn, streamExecutor);
 
-            System.err.println("Initiating Transfer Manager upload with compression...");
+            System.err.println("Initiating Transfer Manager upload...");
             Upload upload = transferManager.upload(uploadRequest);
 
             // Wait for BOTH upload and compression to complete - fail if either fails

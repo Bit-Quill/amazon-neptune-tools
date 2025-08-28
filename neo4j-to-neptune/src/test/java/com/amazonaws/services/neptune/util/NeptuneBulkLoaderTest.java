@@ -133,7 +133,7 @@ public class NeptuneBulkLoaderTest {
     @Test
     public void testUploadSingleFileAsyncS3Success() throws Exception {
         File testDir = tempFolder.newFolder(TestDataProvider.TEMP_FOLDER_NAME);
-        File testVerticiesFile = new File(testDir, TestDataProvider.VERTICIES_CSV_GZ);
+        File testVerticiesFile = new File(testDir, TestDataProvider.VERTICES_CSV);
         TestDataProvider.createMockVerticesFile(testDir, testVerticiesFile);
 
         // Create a successful PutObjectResponse
@@ -165,7 +165,7 @@ public class NeptuneBulkLoaderTest {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         try {
-            CompletableFuture<Boolean> result = neptuneBulkLoader.uploadSingleFileAsync(
+            CompletableFuture<Boolean> result = neptuneBulkLoader.uploadFileWithInflightCompression(
                 testVerticiesFile.getAbsolutePath(),
                 TestDataProvider.S3_KEY_FOR_UPLOAD_FILE_ASYNC_VERTICES
             );
@@ -183,7 +183,7 @@ public class NeptuneBulkLoaderTest {
             // Verify the output contains success message
             String error = errorStream.toString();
             assertTrue("Should contain upload attempt message",
-                error.contains("Starting async upload"));
+                error.contains("Starting upload with compression of "));
 
         } catch (Exception e) {
             fail("Should not throw exception when S3TransferManager is mocked successfully: " + e.getMessage());
@@ -193,7 +193,7 @@ public class NeptuneBulkLoaderTest {
     @Test
     public void testUploadSingleFileAsyncUploadFailure() throws Exception {
         File testDir = tempFolder.newFolder(TestDataProvider.TEMP_FOLDER_NAME);
-        File testVerticiesFile = new File(testDir, TestDataProvider.VERTICIES_CSV_GZ);
+        File testVerticiesFile = new File(testDir, TestDataProvider.VERTICES_CSV);
         TestDataProvider.createMockVerticesFile(testDir, testVerticiesFile);
 
         // Mock any upload failure
@@ -211,7 +211,7 @@ public class NeptuneBulkLoaderTest {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mockHttpClient, mockTransferManager);
 
         try {
-            CompletableFuture<Boolean> result = neptuneBulkLoader.uploadSingleFileAsync(
+            CompletableFuture<Boolean> result = neptuneBulkLoader.uploadFileWithInflightCompression(
                 testVerticiesFile.getAbsolutePath(),
                 TestDataProvider.S3_KEY_FOR_UPLOAD_FILE_ASYNC_VERTICES
             );
@@ -227,7 +227,7 @@ public class NeptuneBulkLoaderTest {
             // Verify error logging occurred
             String error = errorStream.toString();
             assertTrue("Should contain upload attempt message",
-                error.contains("Starting async upload"));
+                error.contains("Starting upload with compression of"));
             assertTrue("Should contain error logging",
                 error.contains("Transfer Manager upload failed") || error.contains("Upload failed"));
         }
@@ -237,7 +237,7 @@ public class NeptuneBulkLoaderTest {
     public void testUploadSingleFileAsyncWithNonExistentFile() throws Exception {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mock(HttpClient.class), mock(S3TransferManager.class));
 
-        neptuneBulkLoader.uploadSingleFileAsync("/non/existent/file.csv", TestDataProvider.S3_PREFIX);
+        neptuneBulkLoader.uploadFileWithInflightCompression("/non/existent/file.csv", TestDataProvider.S3_PREFIX);
     }
 
     @Test(expected = IllegalStateException.class)
@@ -247,7 +247,7 @@ public class NeptuneBulkLoaderTest {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mock(HttpClient.class), mock(S3TransferManager.class));
 
         // This should fail because uploadSingleFileAsync expects a file, not a directory
-        neptuneBulkLoader.uploadSingleFileAsync(testDir.getAbsolutePath(), TestDataProvider.S3_PREFIX);
+        neptuneBulkLoader.uploadFileWithInflightCompression(testDir.getAbsolutePath(), TestDataProvider.S3_PREFIX);
     }
 
     @Test
@@ -270,7 +270,7 @@ public class NeptuneBulkLoaderTest {
         CompletableFuture<Void> mockCompressionFuture = CompletableFuture.completedFuture(null);
         doReturn(mockCompressionFuture).when(loader).startCompressionTask(any(File.class), any());
 
-        CompletableFuture<Boolean> result = loader.uploadSingleFileAsync(testCsvFile.getAbsolutePath(), "test-prefix");
+        CompletableFuture<Boolean> result = loader.uploadFileWithInflightCompression(testCsvFile.getAbsolutePath(), "test-prefix");
 
         assertTrue("Compression upload should complete successfully", result.get());
     }
@@ -296,7 +296,7 @@ public class NeptuneBulkLoaderTest {
         failedCompressionFuture.completeExceptionally(new RuntimeException("Compression failed"));
         doReturn(failedCompressionFuture).when(loader).startCompressionTask(any(File.class), any());
 
-        CompletableFuture<Boolean> result = loader.uploadSingleFileAsync(testCsvFile.getAbsolutePath(), "test-prefix");
+        CompletableFuture<Boolean> result = loader.uploadFileWithInflightCompression(testCsvFile.getAbsolutePath(), "test-prefix");
 
         try {
             result.get();
@@ -315,17 +315,17 @@ public class NeptuneBulkLoaderTest {
 
         NeptuneBulkLoader spyLoader = spy(TestDataProvider.createNeptuneBulkLoader());
 
-        // Mock uploadFileAsync to succeed (void method)
-        doNothing().when(spyLoader).uploadFileAsync(anyString(), anyString());
+        // Mock uploadFilesInDirectory to succeed (void method)
+        doNothing().when(spyLoader).uploadFilesInDirectory(anyString(), anyString());
 
         // Test upload
         spyLoader.uploadCsvFilesToS3(testDir.getAbsolutePath());
 
-        // Verify uploadFileAsync was called once (for the directory)
-        verify(spyLoader, times(1)).uploadFileAsync(anyString(), anyString());
+        // Verify uploadFilesInDirectory was called once (for the directory)
+        verify(spyLoader, times(1)).uploadFilesInDirectory(anyString(), anyString());
 
         // Verify the directory path was called
-        verify(spyLoader).uploadFileAsync(
+        verify(spyLoader).uploadFilesInDirectory(
             eq(testDir.getAbsolutePath()),
             contains(testDir.getName())
         );
@@ -353,12 +353,12 @@ public class NeptuneBulkLoaderTest {
         CompletableFuture<Boolean> failureFuture = CompletableFuture.completedFuture(false);
         CompletableFuture<Boolean> successFuture = CompletableFuture.completedFuture(true);
 
-        doReturn(failureFuture).when(spyLoader).uploadSingleFileAsync(
-            eq(testDir.getAbsolutePath() + File.separator + TestDataProvider.VERTICIES_CSV_GZ),
+        doReturn(failureFuture).when(spyLoader).uploadFileWithInflightCompression(
+            eq(testDir.getAbsolutePath() + File.separator + TestDataProvider.VERTICES_CSV),
             anyString()
         );
-        doReturn(successFuture).when(spyLoader).uploadSingleFileAsync(
-            eq(testDir.getAbsolutePath() + File.separator + TestDataProvider.EDGES_CSV_GZ),
+        doReturn(successFuture).when(spyLoader).uploadFileWithInflightCompression(
+            eq(testDir.getAbsolutePath() + File.separator + TestDataProvider.EDGES_CSV),
             anyString()
         );
 
@@ -380,12 +380,12 @@ public class NeptuneBulkLoaderTest {
         CompletableFuture<Boolean> successFuture = CompletableFuture.completedFuture(true);
         CompletableFuture<Boolean> failureFuture = CompletableFuture.completedFuture(false);
 
-        doReturn(successFuture).when(spyLoader).uploadSingleFileAsync(
-            eq(testDir.getAbsolutePath() + File.separator + TestDataProvider.VERTICIES_CSV_GZ),
+        doReturn(successFuture).when(spyLoader).uploadFileWithInflightCompression(
+            eq(testDir.getAbsolutePath() + File.separator + TestDataProvider.VERTICES_CSV),
             anyString()
         );
-        doReturn(failureFuture).when(spyLoader).uploadSingleFileAsync(
-            eq(testDir.getAbsolutePath() + File.separator + TestDataProvider.EDGES_CSV_GZ),
+        doReturn(failureFuture).when(spyLoader).uploadFileWithInflightCompression(
+            eq(testDir.getAbsolutePath() + File.separator + TestDataProvider.EDGES_CSV),
             anyString()
         );
 
@@ -405,7 +405,7 @@ public class NeptuneBulkLoaderTest {
 
         // Mock both uploads to fail
         CompletableFuture<Boolean> failureFuture = CompletableFuture.completedFuture(false);
-        doReturn(failureFuture).when(spyLoader).uploadSingleFileAsync(anyString(), anyString());
+        doReturn(failureFuture).when(spyLoader).uploadFileWithInflightCompression(anyString(), anyString());
 
         // Test upload - should throw RuntimeException
         spyLoader.uploadCsvFilesToS3(testDir.getAbsolutePath());
@@ -421,8 +421,8 @@ public class NeptuneBulkLoaderTest {
 
         NeptuneBulkLoader spyLoader = spy(TestDataProvider.createNeptuneBulkLoader());
 
-        // Mock uploadFileAsync to throw an exception (void method)
-        doThrow(new RuntimeException("S3 connection failed")).when(spyLoader).uploadFileAsync(anyString(), anyString());
+        // Mock uploadFilesInDirectory to throw an exception (void method)
+        doThrow(new RuntimeException("S3 connection failed")).when(spyLoader).uploadFilesInDirectory(anyString(), anyString());
 
         try {
             spyLoader.uploadCsvFilesToS3(testDir.getAbsolutePath());
@@ -442,8 +442,8 @@ public class NeptuneBulkLoaderTest {
 
         NeptuneBulkLoader spyLoader = spy(TestDataProvider.createNeptuneBulkLoader());
 
-        // Mock uploadFileAsync to succeed (void method)
-        doNothing().when(spyLoader).uploadFileAsync(anyString(), anyString());
+        // Mock uploadFilesInDirectory to succeed (void method)
+        doNothing().when(spyLoader).uploadFilesInDirectory(anyString(), anyString());
 
         // Test upload
         spyLoader.uploadCsvFilesToS3(testDir.getAbsolutePath());
@@ -452,8 +452,8 @@ public class NeptuneBulkLoaderTest {
         String expectedTimestamp = testDir.getName();
         String expectedS3Prefix = TestDataProvider.S3_PREFIX + File.separator + expectedTimestamp;
 
-        // Verify uploadFileAsync is called with correct S3 prefix
-        verify(spyLoader).uploadFileAsync(
+        // Verify uploadFilesInDirectory is called with correct S3 prefix
+        verify(spyLoader).uploadFilesInDirectory(
             eq(testDir.getAbsolutePath()),
             eq(expectedS3Prefix)
         );
@@ -466,8 +466,8 @@ public class NeptuneBulkLoaderTest {
 
         NeptuneBulkLoader spyLoader = spy(TestDataProvider.createNeptuneBulkLoader());
 
-        // Mock uploadFileAsync to throw exception (void method)
-        doThrow(new RuntimeException("Upload failed")).when(spyLoader).uploadFileAsync(anyString(), anyString());
+        // Mock uploadFilesInDirectory to throw exception (void method)
+        doThrow(new RuntimeException("Upload failed")).when(spyLoader).uploadFilesInDirectory(anyString(), anyString());
 
         try {
             spyLoader.uploadCsvFilesToS3(testDir.getAbsolutePath());
@@ -1548,12 +1548,12 @@ public class NeptuneBulkLoaderTest {
     }
 
     @Test
-    public void testUploadFileAsyncDirectorySuccess() throws Exception {
+    public void testuploadFilesInDirectorySuccess() throws Exception {
         File testDir = tempFolder.newFolder(TestDataProvider.TEMP_FOLDER_NAME);
 
-        // Create .csv files (not .csv.gz) since uploadFileAsync looks for .csv extension
-        File verticesFile = new File(testDir, "vertices.csv");
-        File edgesFile = new File(testDir, "edges.csv");
+        // Create .csv files (not .csv.gz) since uploadFilesInDirectory looks for .csv extension
+        File verticesFile = new File(testDir, TestDataProvider.VERTICES_CSV);
+        File edgesFile = new File(testDir, TestDataProvider.EDGES_CSV);
         TestDataProvider.createMockCsvFiles(testDir, verticesFile, edgesFile);
 
         // Create NeptuneBulkLoader with mock clients
@@ -1563,20 +1563,20 @@ public class NeptuneBulkLoaderTest {
 
         // Mock uploadSingleFileAsync to return success for both files
         CompletableFuture<Boolean> successFuture = CompletableFuture.completedFuture(true);
-        doReturn(successFuture).when(spyLoader).uploadSingleFileAsync(anyString(), anyString());
+        doReturn(successFuture).when(spyLoader).uploadFileWithInflightCompression(anyString(), anyString());
 
         try {
-            // Call uploadFileAsync (now void method)
-            spyLoader.uploadFileAsync(
+            // Call uploadFilesInDirectory (now void method)
+            spyLoader.uploadFilesInDirectory(
                 testDir.getAbsolutePath(),
                 TestDataProvider.S3_PREFIX + "/test-upload"
             );
 
             // Verify the method was called
-            verify(spyLoader, times(1)).uploadFileAsync(anyString(), anyString());
+            verify(spyLoader, times(1)).uploadFilesInDirectory(anyString(), anyString());
 
             // Verify that uploadSingleFileAsync was called for both CSV files
-            verify(spyLoader, times(2)).uploadSingleFileAsync(anyString(), anyString());
+            verify(spyLoader, times(2)).uploadFileWithInflightCompression(anyString(), anyString());
 
             // Verify the output contains success message
             String error = errorStream.toString();
@@ -1591,12 +1591,12 @@ public class NeptuneBulkLoaderTest {
     }
 
     @Test
-    public void testUploadFileAsyncDirectoryWithS3Exception() throws Exception {
+    public void testuploadFilesInDirectoryWithS3Exception() throws Exception {
         File testDir = tempFolder.newFolder(TestDataProvider.TEMP_FOLDER_NAME);
 
-        // Create .csv files (not .csv.gz) since uploadFileAsync looks for .csv extension
-        File verticesFile = new File(testDir, "vertices.csv");
-        File edgesFile = new File(testDir, "edges.csv");
+        // Create .csv files (not .csv.gz) since uploadFilesInDirectory looks for .csv extension
+        File verticesFile = new File(testDir, TestDataProvider.VERTICES_CSV);
+        File edgesFile = new File(testDir, TestDataProvider.EDGES_CSV);
         TestDataProvider.createMockCsvFiles(testDir, verticesFile, edgesFile);
 
         // Create NeptuneBulkLoader spy with mock clients
@@ -1607,11 +1607,11 @@ public class NeptuneBulkLoaderTest {
         // Mock uploadSingleFileAsync to throw exception (simulating S3 failure)
         CompletableFuture<Boolean> failedFuture = new CompletableFuture<>();
         failedFuture.completeExceptionally(new RuntimeException("S3 upload failed"));
-        doReturn(failedFuture).when(spyLoader).uploadSingleFileAsync(anyString(), anyString());
+        doReturn(failedFuture).when(spyLoader).uploadFileWithInflightCompression(anyString(), anyString());
 
         try {
-            // Call uploadFileAsync (now void method) - should throw exception
-            spyLoader.uploadFileAsync(
+            // Call uploadFilesInDirectory (now void method) - should throw exception
+            spyLoader.uploadFilesInDirectory(
                 testDir.getAbsolutePath(),
                 TestDataProvider.S3_PREFIX + "/test-upload"
             );
@@ -1620,7 +1620,7 @@ public class NeptuneBulkLoaderTest {
 
         } catch (Exception e) {
             // Verify that uploadSingleFileAsync was called (sequential stops on first failure)
-            verify(spyLoader, times(1)).uploadSingleFileAsync(anyString(), anyString());
+            verify(spyLoader, times(1)).uploadFileWithInflightCompression(anyString(), anyString());
 
             // Verify error stream contains the exception details
             String error = errorStream.toString();
@@ -1630,16 +1630,16 @@ public class NeptuneBulkLoaderTest {
     }
 
     @Test(expected = IllegalStateException.class)
-    public void testUploadFileAsyncWithNonExistentDirectory() throws Exception {
+    public void testuploadFilesInDirectoryWithNonExistentDirectory() throws Exception {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mock(HttpClient.class), mock(S3TransferManager.class));
 
-        neptuneBulkLoader.uploadFileAsync(
+        neptuneBulkLoader.uploadFilesInDirectory(
             "/non/existent/directory",
             TestDataProvider.S3_PREFIX);
     }
 
     @Test
-    public void testUploadFileAsyncWithEmptyDirectory() throws Exception {
+    public void testuploadFilesInDirectoryWithEmptyDirectory() throws Exception {
         File testDir = tempFolder.newFolder(TestDataProvider.TEMP_FOLDER_NAME);
         // Don't create any CSV files - directory is empty
 
@@ -1647,8 +1647,8 @@ public class NeptuneBulkLoaderTest {
         NeptuneBulkLoader neptuneBulkLoader = TestDataProvider.createNeptuneBulkLoader(mock(HttpClient.class), mock(S3TransferManager.class));
 
         try {
-            // Call uploadFileAsync (now void method) - should throw exception for empty directory
-            neptuneBulkLoader.uploadFileAsync(
+            // Call uploadFilesInDirectory (now void method) - should throw exception for empty directory
+            neptuneBulkLoader.uploadFilesInDirectory(
                 testDir.getAbsolutePath(),
                 TestDataProvider.S3_PREFIX
             );
@@ -1663,12 +1663,12 @@ public class NeptuneBulkLoaderTest {
     }
 
     @Test
-    public void testUploadFileAsyncDirectoryPartialFailure() throws Exception {
+    public void testuploadFilesInDirectoryPartialFailure() throws Exception {
         File testDir = tempFolder.newFolder(TestDataProvider.TEMP_FOLDER_NAME);
 
-        // Create .csv files (not .csv.gz) since uploadFileAsync looks for .csv extension
-        File verticesFile = new File(testDir, "vertices.csv");
-        File edgesFile = new File(testDir, "edges.csv");
+        // Create .csv files since uploadFilesInDirectory looks for .csv extension
+        File verticesFile = new File(testDir, TestDataProvider.VERTICES_CSV);
+        File edgesFile = new File(testDir, TestDataProvider.EDGES_CSV);
         TestDataProvider.createMockCsvFiles(testDir, verticesFile, edgesFile);
 
         // Create NeptuneBulkLoader spy with mock clients
@@ -1683,11 +1683,11 @@ public class NeptuneBulkLoaderTest {
 
         // Mock uploadSingleFileAsync to return success first, then failure
         doReturn(successFuture).doReturn(failedFuture)
-            .when(spyLoader).uploadSingleFileAsync(anyString(), anyString());
+            .when(spyLoader).uploadFileWithInflightCompression(anyString(), anyString());
 
         try {
-            // Call uploadFileAsync (now void method) - should throw exception on second file
-            spyLoader.uploadFileAsync(
+            // Call uploadFilesInDirectory (now void method) - should throw exception on second file
+            spyLoader.uploadFilesInDirectory(
                 testDir.getAbsolutePath(),
                 TestDataProvider.S3_PREFIX + "/test-upload"
             );
@@ -1696,7 +1696,7 @@ public class NeptuneBulkLoaderTest {
 
         } catch (Exception e) {
             // Verify both uploadSingleFileAsync calls were made (first succeeds, second fails)
-            verify(spyLoader, times(2)).uploadSingleFileAsync(anyString(), anyString());
+            verify(spyLoader, times(2)).uploadFileWithInflightCompression(anyString(), anyString());
 
             // Verify error message
             String error = errorStream.toString();

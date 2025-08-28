@@ -13,6 +13,9 @@ permissions and limitations under the License.
 package com.amazonaws.services.neptune.metadata;
 
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameters;
 
 import com.amazonaws.services.neptune.TestDataProvider;
 
@@ -352,39 +355,52 @@ public class BulkLoadConfigTest {
         assertTrue(toString.contains(TestDataProvider.NEPTUNE_ENDPOINT));
     }
 
-    @Test
-    public void testS3BucketNameValidation() {
-        String invalidPrefixSuffix = "S3 bucket name has an invalid prefix or suffix";
-        String expectedIllegalArgumentException = "Expected IllegalArgumentException";
-        Object[][] validationTests = {
-            {"ab", expectedIllegalArgumentException, "S3 bucket name must be between 3 and 63 characters"},
-            {"a".repeat(64), expectedIllegalArgumentException, "S3 bucket name must be between 3 and 63 characters"},
-            {"My-Bucket", expectedIllegalArgumentException, "S3 bucket name must only contain lowercase letters, numbers, hyphens, and periods"},
-            {"$$$", expectedIllegalArgumentException, "S3 bucket name must only contain lowercase letters, numbers, hyphens, and periods"},
-            {"-bucket", expectedIllegalArgumentException, "S3 bucket name must begin and end with a letter or number"},
-            {"bucket-", expectedIllegalArgumentException, "S3 bucket name must begin and end with a letter or number"},
-            {"my..bucket", expectedIllegalArgumentException, "S3 bucket name cannot contain consecutive periods"},
-            {"192.168.1.1", expectedIllegalArgumentException, "S3 bucket name cannot be formatted as an IP address"},
-            {"xn--bucket", expectedIllegalArgumentException, invalidPrefixSuffix},
-            {"sthree-bucket", expectedIllegalArgumentException, invalidPrefixSuffix},
-            {"amzn-s3-demo-bucket", expectedIllegalArgumentException, invalidPrefixSuffix},
-            {"bucket-s3alias", expectedIllegalArgumentException, invalidPrefixSuffix},
-            {"bucket--ol-s3", expectedIllegalArgumentException, invalidPrefixSuffix},
-            {"bucket.mrap", expectedIllegalArgumentException, invalidPrefixSuffix},
-            {"bucket--x-s3", expectedIllegalArgumentException, invalidPrefixSuffix},
-            {"bucket--table-s3", expectedIllegalArgumentException, invalidPrefixSuffix}
-        };
+    @RunWith(Parameterized.class)
+    public static class S3BucketNameValidationTest {
 
-        BulkLoadConfig config = new BulkLoadConfig()
-            .withNeptuneEndpoint(TestDataProvider.NEPTUNE_ENDPOINT)
-            .withIamRoleArn(TestDataProvider.IAM_ROLE_ARN);;
-        for (Object[] params : validationTests) {
+        @Parameters(name = "{0}")
+        public static Object[][] data() {
+            return new Object[][] {
+                {"ab", "S3 bucket name must be between 3 and 63 characters"},
+                {"a".repeat(64), "S3 bucket name must be between 3 and 63 characters"},
+                {"My-Bucket", "S3 bucket name must only contain lowercase letters, numbers, hyphens, and periods"},
+                {"$$$", "S3 bucket name must only contain lowercase letters, numbers, hyphens, and periods"},
+                {"-bucket", "S3 bucket name must begin and end with a letter or number"},
+                {"bucket-", "S3 bucket name must begin and end with a letter or number"},
+                {"my..bucket", "S3 bucket name cannot contain consecutive periods"},
+                {"192.168.1.1", "S3 bucket name cannot be formatted as an IP address"},
+                {"xn--bucket", "S3 bucket name has an invalid prefix or suffix"},
+                {"sthree-bucket", "S3 bucket name has an invalid prefix or suffix"},
+                {"amzn-s3-demo-bucket", "S3 bucket name has an invalid prefix or suffix"},
+                {"bucket-s3alias", "S3 bucket name has an invalid prefix or suffix"},
+                {"bucket--ol-s3", "S3 bucket name has an invalid prefix or suffix"},
+                {"bucket.mrap", "S3 bucket name has an invalid prefix or suffix"},
+                {"bucket--x-s3", "S3 bucket name has an invalid prefix or suffix"},
+                {"bucket--table-s3", "S3 bucket name has an invalid prefix or suffix"}
+            };
+        }
+
+        private final String bucketName;
+        private final String expectedMessage;
+
+        public S3BucketNameValidationTest(String bucketName, String expectedMessage) {
+            this.bucketName = bucketName;
+            this.expectedMessage = expectedMessage;
+        }
+
+        @Test
+        public void testS3BucketNameValidation() {
+            BulkLoadConfig config = new BulkLoadConfig()
+                .withNeptuneEndpoint(TestDataProvider.NEPTUNE_ENDPOINT)
+                .withIamRoleArn(TestDataProvider.IAM_ROLE_ARN);
+
+            config.setBucketName(bucketName);
+
             try {
-                config.setBucketName(params[0].toString());
                 BulkLoadConfig.validateBulkLoadConfigValues(config);
-                fail(params[1].toString());
+                fail("Expected IllegalArgumentException");
             } catch (IllegalArgumentException e) {
-                assertEquals(params[2].toString(), e.getMessage());
+                assertEquals(expectedMessage, e.getMessage());
             }
         }
     }

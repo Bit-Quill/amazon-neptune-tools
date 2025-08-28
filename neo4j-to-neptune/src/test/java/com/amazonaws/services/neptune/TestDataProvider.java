@@ -44,19 +44,15 @@ public class TestDataProvider {
     // Test constants
     public static final String BUCKET = "test-neptune-bucket";
     public static final String S3_PREFIX = "test-prefix";
-    public static final String S3_DEFAULT = "";
     public static final String CONVERT_CSV_TIMESTAMP = "1751659751530";
-    public static final String S3_SOURCE_URI = "s3://" + BUCKET + "/" + S3_PREFIX + CONVERT_CSV_TIMESTAMP + "/";
     public static final Region REGION_US_EAST_2 = Region.US_EAST_2;
     public static final String NEPTUNE_ENDPOINT = "test-neptune.cluster-abc123." + REGION_US_EAST_2 + ".neptune.amazonaws.com";
     public static final String IAM_ROLE_ARN = "arn:aws:iam::123456789012:role/TestNeptuneRole";
     public static final String TEMP_FOLDER_NAME = "TEST_TEMP_FOLDER";
-    public static final String VERTICIES_CSV_GZ = "vertices.csv.gz";
-    public static final String EDGES_CSV_GZ = "edges.csv.gz";
-    public static final String S3_KEY_FOR_UPLOAD_FILE_ASYNC_VERTICES = S3_PREFIX + "/" + VERTICIES_CSV_GZ;
-    public static final String S3_KEY_FOR_UPLOAD_FILE_ASYNC_EDGES = S3_PREFIX + "/" + EDGES_CSV_GZ;
+    public static final String VERTICES_CSV = "vertices.csv";
+    public static final String EDGES_CSV = "edges.csv";
+    public static final String S3_KEY_FOR_UPLOAD_FILE_ASYNC_VERTICES = S3_PREFIX + "/" + VERTICES_CSV;
     public static final String LOAD_ID_0 = "00000000-0000-0000-0000-000000000000";
-    public static final String LOAD_ID_1 = "00000000-0000-0000-0000-000000000001";
     public static final String BULK_LOAD_PARALLELISM_LOW = "LOW";
     public static final String BULK_LOAD_PARALLELISM_MEDIUM = "MEDIUM";
     public static final String BULK_LOAD_PARALLELISM_HIGH = "HIGH";
@@ -141,8 +137,8 @@ public class TestDataProvider {
      * @throws IOException If file creation fails
      */
     public static void createMockCsvFiles(File directory) throws IOException {
-        File testVerticiesFile = new File(directory, TestDataProvider.VERTICIES_CSV_GZ);
-        File testEdgesFile = new File(directory, TestDataProvider.EDGES_CSV_GZ);
+        File testVerticiesFile = new File(directory, TestDataProvider.VERTICES_CSV);
+        File testEdgesFile = new File(directory, TestDataProvider.EDGES_CSV);
         createMockVerticesFile(directory, testVerticiesFile);
         createMockEdgesFile(directory, testEdgesFile);
     }
