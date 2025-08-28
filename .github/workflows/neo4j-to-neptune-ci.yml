@@ -71,7 +71,7 @@ jobs:
     
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v4
-      if: github.ref == 'refs/heads/main'
+      if: github.event_name == 'pull_request'
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./neo4j-to-neptune/target/site/jacoco/
