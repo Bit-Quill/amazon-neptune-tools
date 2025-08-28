@@ -34,9 +34,9 @@ jobs:
         key: ${{ runner.os }}-m2-${{ hashFiles('neo4j-to-neptune/pom.xml') }}
         restore-keys: ${{ runner.os }}-m2
 
-    - name: Maven install and tests
+    - name: Run Maven build and tests with code coverage
       working-directory: ./neo4j-to-neptune
-      run: mvn clean install --batch-mode --fail-at-end
+      run: mvn clean verify jacoco:report --batch-mode --fail-at-end
 
     - name: Upload test results
       uses: actions/upload-artifact@v4
@@ -44,3 +44,26 @@ jobs:
       with:
         name: test-results
         path: neo4j-to-neptune/target/surefire-reports/
+
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        files: ./neo4j-to-neptune/target/site/jacoco/jacoco.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+    - name: Generate coverage report comment
+      uses: madrapps/jacoco-report@v1.6.1
+      if: github.event_name == 'pull_request'
+      with:
+        paths: neo4j-to-neptune/target/site/jacoco/jacoco.xml
+        token: ${{ secrets.GITHUB_TOKEN }}
+        min-coverage-overall: 70
+        min-coverage-changed-files: 80
+
+    - name: Upload JaCoCo coverage reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: jacoco-report
+        path: target/site/jacoco/
